@@ -1,0 +1,10 @@
+# Line endings are fixed here, not by each machine's Git settings, so every clone matches .editorconfig.
+* text=auto eol=lf
+*.sln text eol=crlf
+
+# Written by tools (dotnet restore, detect-secrets): kept byte for byte.
+packages.lock.json -text
+.config/secrets.baseline -text
+
+*.png binary
+*.ico binary
