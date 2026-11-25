@@ -112,25 +112,26 @@
             <!-- Column header: the game's red bar -->
             <Grid Grid.Row="3" Margin="18,0,18,6">
                 <Border Background="{StaticResource RedBrush}" CornerRadius="2" Height="34">
-                    <Grid x:Name="HeaderGrid" Margin="0,0,10,0">
+                    <!-- 1 px each side matches the row border; the list's scroll bar sits in the gutter to the right. -->
+                    <Grid x:Name="HeaderGrid" Margin="1,0,1,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
-                            <ColumnDefinition Width="86" />
+                            <ColumnDefinition Width="76" />
                             <ColumnDefinition Width="160" />
                             <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="70" />
                             <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="70" />
-                            <ColumnDefinition Width="70" />
+                            <ColumnDefinition Width="86" />
                         </Grid.ColumnDefinitions>
                         <Button x:Name="HeadName" Style="{StaticResource HeaderCell}" Tag="Name" Click="OnSort" />
-                        <Button x:Name="HeadPing" Grid.Column="1" Style="{StaticResource HeaderCell}" Tag="Ping" Click="OnSort"
-                                ToolTip="Steam's estimate of your round trip to the host, in milliseconds, through its relay network." />
+                        <Button x:Name="HeadSlots" Grid.Column="1" Style="{StaticResource HeaderCell}" Tag="Slots" Click="OnSort"
+                                ToolTip="Server size. Steam does not publish how many players are in." />
                         <Button x:Name="HeadMode" Grid.Column="2" Style="{StaticResource HeaderCell}" Tag="Mode" Click="OnSort" />
                         <Button x:Name="HeadMap" Grid.Column="3" Style="{StaticResource HeaderCell}" Tag="Map" Click="OnSort" />
-                        <Button x:Name="HeadRegion" Grid.Column="4" Style="{StaticResource HeaderCell}" Tag="Region" Click="OnSort" />
-                        <Button x:Name="HeadBots" Grid.Column="5" Style="{StaticResource HeaderCell}" Tag="Bots" Click="OnSort" />
-                        <Button x:Name="HeadSlots" Grid.Column="6" Style="{StaticResource HeaderCell}" Tag="Slots" Click="OnSort"
-                                ToolTip="Server size. Steam does not publish how many players are in." />
+                        <Button x:Name="HeadBots" Grid.Column="4" Style="{StaticResource HeaderCell}" Tag="Bots" Click="OnSort" />
+                        <Button x:Name="HeadRegion" Grid.Column="5" Style="{StaticResource HeaderCell}" Tag="Region" Click="OnSort" />
+                        <Button x:Name="HeadPing" Grid.Column="6" Style="{StaticResource HeaderCell}" Tag="Ping" Click="OnSort"
+                                ToolTip="Steam's estimate of your round trip to the host, in milliseconds, through its relay network." />
                     </Grid>
                 </Border>
                 <Canvas x:Name="ProgressTrack" Height="2" VerticalAlignment="Bottom" ClipToBounds="True" Margin="0,0,0,-4" Visibility="Hidden">
@@ -141,7 +142,8 @@
             <!-- Server list -->
             <Grid Grid.Row="4" Margin="18,2,8,0">
                 <ListBox x:Name="List" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Row}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Visible"
+                         VirtualizingPanel.IsVirtualizing="True"
                          VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel"
                          Padding="0,0,0,0" MouseDoubleClick="OnListDoubleClick" PreviewKeyDown="OnListKey"
                          SelectionChanged="OnSelectionChanged">
@@ -158,12 +160,12 @@
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="200" />
-                                    <ColumnDefinition Width="86" />
+                                    <ColumnDefinition Width="76" />
                                     <ColumnDefinition Width="160" />
                                     <ColumnDefinition Width="170" />
+                                    <ColumnDefinition Width="70" />
                                     <ColumnDefinition Width="150" />
-                                    <ColumnDefinition Width="70" />
-                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="86" />
                                 </Grid.ColumnDefinitions>
                                 <Grid Margin="12,0">
                                     <Grid.ColumnDefinitions>
@@ -175,17 +177,17 @@
                                     <Ellipse x:Name="Dot" Grid.Column="1" Width="9" Height="9" Fill="White" Margin="10,1,0,0"
                                              HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Hidden" />
                                 </Grid>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="1" Text="{Binding SlotsText}" Margin="12,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextDimBrush}" FontSize="15" />
+                                <TextBlock Grid.Column="2" Text="{Binding Mode}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
+                                <TextBlock Grid.Column="3" Text="{Binding MapName}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
+                                <TextBlock Grid.Column="4" Text="{Binding BotsText}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
+                                <TextBlock Grid.Column="5" Text="{Binding RegionName}" Margin="12,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                                <StackPanel Grid.Column="6" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
                                     <Rectangle x:Name="PingBar" Width="3" Height="12" Margin="0,1,8,0" Fill="{StaticResource LineStrongBrush}" />
                                     <TextBlock x:Name="PingText" Text="{Binding PingText}" FontSize="15" Foreground="{StaticResource TextFaintBrush}" />
                                 </StackPanel>
-                                <TextBlock Grid.Column="2" Text="{Binding Mode}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
-                                <TextBlock Grid.Column="3" Text="{Binding MapName}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
-                                <TextBlock Grid.Column="4" Text="{Binding RegionName}" Margin="12,0" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="5" Text="{Binding BotsText}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
-                                <TextBlock Grid.Column="6" Text="{Binding SlotsText}" Margin="12,0" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextDimBrush}" FontSize="15" />
                             </Grid>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
