@@ -101,6 +101,15 @@ namespace Dispatch.Tests
         }
 
         [Fact]
+        public void PlayerCountReadsSteamsAnswer()
+        {
+            Assert.Equal(5285, PlayerCount.Parse("{\"response\":{\"player_count\":5285,\"result\":1}}"));
+            Assert.Null(PlayerCount.Parse("{\"response\":{\"result\":42}}"));
+            Assert.Null(PlayerCount.Parse("{\"response\":{\"player_count\":0,\"result\":2}}"));
+            Assert.Null(PlayerCount.Parse(null));
+        }
+
+        [Fact]
         public void UpdateCheckParsesGitHubAndComparesVersions()
         {
             const string json = "{\"html_url\":\"https://github.com/skye-cp/dispatch/releases/tag/v0.6.0\",\"tag_name\":\"v0.6.0\",\"name\":\"x\"}";

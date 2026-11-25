@@ -36,6 +36,9 @@ namespace Dispatch.Model
             [OwnerOf(6)] = "Sam",
         };
 
+        /// <summary>An invented "playing now" total for the demo.</summary>
+        public const int PlayersOnline = 4812;
+
         /// <summary>A demo host shown as followed.</summary>
         public static readonly string FollowedOwner = OwnerOf(4);
 

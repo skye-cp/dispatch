@@ -63,6 +63,8 @@ namespace Dispatch
         private bool autoRefresh;
         private bool watching;
         private ReleaseInfo latestRelease;
+        private int? playersOnline;
+        private DateTime playersCheckedUtc = DateTime.MinValue;
 
         /// <param name="demo">Shows invented servers and leaves Steam and saved settings alone (for screenshots).</param>
         public MainWindow(bool demo = false)
@@ -126,6 +128,7 @@ namespace Dispatch
                 clock.Start();
                 watchTimer.Start();
                 _ = UpdateAsync(false);
+                _ = RefreshPlayersOnlineAsync();
                 _ = CheckForUpdateAsync();
             };
             Activated += (s, e) => CheckClipboard();
@@ -251,6 +254,27 @@ namespace Dispatch
                 }
 
                 Render();
+                _ = RefreshPlayersOnlineAsync();
+            }
+        }
+
+        /// <summary>The app-wide "playing now" total, at most once a minute; keeps the last value if Steam doesn't answer.</summary>
+        private async Task RefreshPlayersOnlineAsync()
+        {
+            if (DateTime.UtcNow - playersCheckedUtc < PlayerCount.Interval)
+            {
+                return;
+            }
+
+            playersCheckedUtc = DateTime.UtcNow;
+            var count = demo ? DemoData.PlayersOnline : await PlayerCount.FetchAsync();
+            if (count.HasValue)
+            {
+                playersOnline = count;
+                if (!messageTimer.IsEnabled)
+                {
+                    ShowDefaultStatus();
+                }
             }
         }
 
@@ -355,7 +379,8 @@ namespace Dispatch
 
             var pool = browser.Pool().Count;
             var updated = browser.UpdatedUtc();
-            Status.Text = pool + " servers from Steam" + (updated.HasValue ? "  ·  updated " + Ago(DateTime.UtcNow - updated.Value) : "");
+            var players = playersOnline.HasValue ? playersOnline.Value.ToString("N0", CultureInfo.CurrentCulture) + " playing now  ·  " : "";
+            Status.Text = players + pool + " servers from Steam" + (updated.HasValue ? "  ·  updated " + Ago(DateTime.UtcNow - updated.Value) : "");
         }
 
         private static string Ago(TimeSpan age) =>
