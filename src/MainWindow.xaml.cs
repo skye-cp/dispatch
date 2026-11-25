@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -348,7 +348,7 @@ namespace Dispatch
             if (lastError != null)
             {
                 EmptyText.Text = lastError;
-                ShowEmptyAction("TRY AGAIN");
+                ShowEmptyAction("TRY AGAIN", () => _ = UpdateAsync(true));
             }
             else if (Busy && doneRequests < pendingRequests)
             {
@@ -357,24 +357,29 @@ namespace Dispatch
             else if (browser.Filters.IsHostSearch)
             {
                 EmptyText.Text = "No server hosted by \"" + browser.Filters.ExactHost + "\" right now.\nHost names must match exactly.";
-                ShowEmptyAction("CLEAR SEARCH");
+                ShowEmptyAction("CLEAR SEARCH", () => SearchBox.Text = "");
             }
             else if (!string.IsNullOrWhiteSpace(browser.Filters.Text))
             {
                 EmptyText.Text = "No listed server matches \"" + browser.Filters.Text.Trim() + "\".\nPress Enter to search every server for that exact host name.";
-                ShowEmptyAction("SEARCH EVERY SERVER");
+                var text = browser.Filters.Text;
+                ShowEmptyAction("SEARCH EVERY SERVER", () => SearchEveryServer(text));
             }
             else
             {
                 EmptyText.Text = "No servers match these filters.";
-                ShowEmptyAction("RESET FILTERS");
+                ShowEmptyAction("RESET FILTERS", ResetFilters);
             }
         }
 
-        private void ShowEmptyAction(string text)
+        /// <summary>What the empty-state button does: set together with its label, so the two can't disagree.</summary>
+        private Action emptyAction;
+
+        private void ShowEmptyAction(string text, Action action)
         {
             EmptyAction.Content = text;
             EmptyAction.Visibility = Visibility.Visible;
+            emptyAction = action;
         }
 
         private void SetBusy(bool busy)
@@ -716,7 +721,26 @@ namespace Dispatch
 
         // Toolbar menus are popups, like the filter dropdowns, so a second click on their button closes them.
         private readonly Dictionary<UIElement, Popup> menus = new Dictionary<UIElement, Popup>();
-        private readonly Dictionary<Popup, DateTime> menuClosedUtc = new Dictionary<Popup, DateTime>();
+        private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
+
+        /// <summary>
+        /// A click on an open popup's button first closes the popup (the click lands outside it), then reaches the
+        /// button: within this time of a popup closing, that click leaves it closed instead of reopening it.
+        /// </summary>
+        private static readonly TimeSpan DismissGrace = TimeSpan.FromMilliseconds(250);
+
+        private bool JustClosed(Popup popup) =>
+            popupClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < DismissGrace;
+
+        private void OpenPopup(Popup popup)
+        {
+            popup.IsOpen = true;
+            if (popup.Child is FrameworkElement panel)
+            {
+                Motion.Fade(panel, 0, 1, 140);
+                Motion.SlideFrom(panel, -6, 160);
+            }
+        }
 
         /// <summary>
         /// Opens the menu under this button and returns its empty panel to fill, or returns null when the click
@@ -736,23 +760,10 @@ namespace Dispatch
                     {
                         new CustomPopupPlacement(new Point(target.Width - size.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
                     },
-                    Child = new Border
-                    {
-                        Background = (Brush)FindResource("SurfaceBrush"),
-                        BorderBrush = (Brush)FindResource("LineStrongBrush"),
-                        BorderThickness = new Thickness(1),
-                        Padding = new Thickness(0, 4, 0, 4),
-                        MinWidth = 220,
-                        Child = new StackPanel(),
-                    },
+                    Child = new Border { Style = (Style)FindResource("ToolbarMenu"), Child = new StackPanel() },
                 };
-                // Popups sit outside the window's tree, so the menu sets the window's font itself.
-                TextElement.SetFontFamily(popup.Child, (FontFamily)FindResource("UiFont"));
-                TextElement.SetFontSize(popup.Child, 14);
-                TextElement.SetForeground(popup.Child, (Brush)FindResource("TextBrush"));
-                TextOptions.SetTextFormattingMode(popup.Child, TextFormattingMode.Display);
                 var closing = popup;
-                popup.Closed += (s, e) => menuClosedUtc[closing] = DateTime.UtcNow;
+                popup.Closed += (s, e) => popupClosedUtc[closing] = DateTime.UtcNow;
                 menus[anchor] = popup;
             }
 
@@ -762,7 +773,7 @@ namespace Dispatch
                 return null;
             }
 
-            if (menuClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            if (JustClosed(popup))
             {
                 return null;
             }
@@ -772,13 +783,7 @@ namespace Dispatch
             return panel;
         }
 
-        private void ShowMenu(UIElement anchor)
-        {
-            var popup = menus[anchor];
-            popup.IsOpen = true;
-            Motion.Fade(popup.Child, 0, 1, 140);
-            Motion.SlideFrom(popup.Child, -6, 160);
-        }
+        private void ShowMenu(UIElement anchor) => OpenPopup(menus[anchor]);
 
         private bool MenuOpen(UIElement anchor) => menus.TryGetValue(anchor, out var p) && p.IsOpen;
 
@@ -790,14 +795,14 @@ namespace Dispatch
             }
         }
 
-        /// <summary>One menu line: an optional check column, the content, and a dim note on the right.</summary>
-        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true)
+        /// <summary>One menu line: a check column for a setting (or an empty one to line up with settings), the content, and a dim note on the right.</summary>
+        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true, bool alignWithChecks = false)
         {
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (check != null)
+            if (check != null || alignWithChecks)
             {
                 grid.Children.Add(new TextBlock
                 {
@@ -821,12 +826,34 @@ namespace Dispatch
             }
 
             var row = new Button { Style = (Style)FindResource("MenuRow"), Content = grid, IsEnabled = enabled };
+
+            // Screen readers (and UI tests) get the line's text, and whether a setting is on.
+            var text = string.Join(", ", new[] { TextOf(content), note }.Where(t => !string.IsNullOrEmpty(t)));
+            AutomationProperties.SetName(row, check == null ? text : text + (check == true ? ", on" : ", off"));
             row.Click += (s, e) =>
             {
                 menus[anchor].IsOpen = false;
                 click?.Invoke();
             };
             return row;
+        }
+
+        /// <summary>The visible text of menu content: a string, or the text blocks of a two-line entry.</summary>
+        private static string TextOf(object content) =>
+            content is string s ? s
+            : content is DependencyObject d ? string.Join(", ", Descendants(d).OfType<TextBlock>().Select(t => t.Text).Where(t => t.Length > 0))
+            : null;
+
+        private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+            {
+                yield return child;
+                foreach (var deeper in Descendants(child))
+                {
+                    yield return deeper;
+                }
+            }
         }
 
         private UIElement MenuTitle(string text, string note = null)
@@ -904,10 +931,10 @@ namespace Dispatch
             }
         }
 
-        private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
+        private void OnRecent(object sender, RoutedEventArgs e) => _ = ShowRecentAsync();
 
         /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
-        private async void ShowRecent()
+        private async Task ShowRecentAsync()
         {
             var panel = BeginMenu(RecentButton);
             if (panel == null)
@@ -950,10 +977,10 @@ namespace Dispatch
             }
         }
 
-        private void OnFollowing(object sender, RoutedEventArgs e) => ShowFollowing();
+        private void OnFollowing(object sender, RoutedEventArgs e) => _ = ShowFollowingAsync();
 
         /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
-        private async void ShowFollowing()
+        private async Task ShowFollowingAsync()
         {
             var panel = BeginMenu(FollowingButton);
             if (panel == null)
@@ -1051,8 +1078,8 @@ namespace Dispatch
                 Say(copyOnJoin ? "Joining a server also copies its invite link, ready to send to friends." : "Joining no longer copies the invite link.");
             }, check: copyOnJoin));
             panel.Children.Add(MenuSeparator());
-            panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), check: false));
-            panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open(UpdateCheck.RepositoryUrl), VersionText.Text, check: false));
+            panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), alignWithChecks: true));
+            panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open(UpdateCheck.RepositoryUrl), VersionText.Text, alignWithChecks: true));
             ShowMenu(MenuButton);
         }
         /// <summary>Copies the joined server's link when that setting is on; returns the note for the status line.</summary>
@@ -1499,33 +1526,33 @@ namespace Dispatch
             QueueSave();
         }
 
+        private bool resetHiding;
+
         /// <summary>RESET fades in when something is filtered and out when nothing is.</summary>
         private void ShowReset(bool show)
         {
-            var visible = ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null;
+            var visible = ResetButton.Visibility == Visibility.Visible && !resetHiding;
             if (show && !visible)
             {
-                ResetButton.Tag = null;
+                resetHiding = false;
                 ResetButton.Visibility = Visibility.Visible;
                 Motion.Fade(ResetButton, 0, 1, 180);
             }
-            else if (!show && ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null)
+            else if (!show && visible)
             {
-                // Tag marks a fade-out in progress, so a quick re-show isn't hidden by it.
-                ResetButton.Tag = "hiding";
+                // Marks the fade-out in progress, so a quick re-show isn't hidden when it ends.
+                resetHiding = true;
                 Motion.Fade(ResetButton, 1, 0, 160, () =>
                 {
-                    if ((string)ResetButton.Tag == "hiding")
+                    if (resetHiding)
                     {
                         ResetButton.Visibility = Visibility.Collapsed;
-                        ResetButton.Tag = null;
+                        resetHiding = false;
                     }
                 });
             }
         }
 
-
-        private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
 
         private Popup PopupFor(Button button) => filterParts.Values.First(p => p.Button == button).Popup;
 
@@ -1534,18 +1561,9 @@ namespace Dispatch
         private void OnFilterButton(object sender, RoutedEventArgs e)
         {
             var popup = PopupFor((Button)sender);
-
-            // Clicking the button of an open dropdown closes it (the click itself already dismissed it).
-            if (popupClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            if (!JustClosed(popup))
             {
-                return;
-            }
-
-            popup.IsOpen = true;
-            if (popup.Child is FrameworkElement panel)
-            {
-                Motion.Fade(panel, 0, 1, 140);
-                Motion.SlideFrom(panel, -6, 160);
+                OpenPopup(popup);
             }
         }
 
@@ -1691,26 +1709,7 @@ namespace Dispatch
             }
         }
 
-        private void OnEmptyAction(object sender, RoutedEventArgs e)
-        {
-            if (lastError != null)
-            {
-                _ = UpdateAsync(true);
-            }
-            else if (browser.Filters.IsHostSearch)
-            {
-                SearchBox.Text = "";
-            }
-            else if (!string.IsNullOrWhiteSpace(browser.Filters.Text))
-            {
-                SearchEveryServer(browser.Filters.Text);
-            }
-            else
-            {
-                ResetFilters();
-            }
-        }
-
+        private void OnEmptyAction(object sender, RoutedEventArgs e) => emptyAction?.Invoke();
         // ---------- sorting ----------
 
         private void OnSort(object sender, RoutedEventArgs e)
@@ -1937,8 +1936,6 @@ namespace Dispatch
                 return;
             }
 
-            // A host alerts only after being seen away: gone for a while since last seen, or found not hosting by
-            // a check. A host simply noticed for the first time (online at start, or outside the filters) doesn't.
             var appeared = hosts.Appeared(servers, follows.Contains, now);
             if (appeared.Count > 0)
             {
@@ -2246,7 +2243,7 @@ namespace Dispatch
             else if (ctrl && e.Key == Key.H)
             {
                 e.Handled = true;
-                ShowRecent();
+                _ = ShowRecentAsync();
             }
             else if (ctrl && e.Key == Key.D && List.SelectedItem is Server picked)
             {
