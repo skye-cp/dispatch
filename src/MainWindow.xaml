@@ -29,6 +29,8 @@
                     <Ellipse Width="9" Height="9" Fill="{StaticResource RedBrush}" Margin="0,1,9,0" VerticalAlignment="Center" />
                     <TextBlock Text="DISPATCH" FontFamily="{StaticResource HeadFont}" FontSize="17" Foreground="{StaticResource TextBrush}" />
                     <TextBlock x:Name="VersionText" Margin="7,3,0,0" FontSize="11" Foreground="{StaticResource TextFaintBrush}" VerticalAlignment="Center" />
+                    <Button x:Name="UpdateLink" Style="{StaticResource Link}" FontSize="12" Margin="6,2,0,0" Visibility="Collapsed"
+                            Foreground="{StaticResource RedHotBrush}" WindowChrome.IsHitTestVisibleInChrome="True" Click="OnUpdate" />
                     <TextBlock x:Name="Tagline" Margin="16,2,0,0" FontFamily="{StaticResource MonoFont}" FontSize="12"
                                Foreground="{StaticResource RedBrush}" VerticalAlignment="Center"
                                Text="Find a Bodycam server. Join it, or send a friend the link." />
@@ -70,8 +72,13 @@
                            Foreground="{StaticResource TextDimBrush}" TextTrimming="CharacterEllipsis" FontSize="13" />
                 <Button x:Name="ResetButton" Grid.Column="3" Style="{StaticResource Link}" Content="RESET" Margin="0,0,8,0"
                         ToolTip="Clear every filter and the search" Click="OnReset" />
-                <Button x:Name="RefreshButton" Grid.Column="4" Style="{StaticResource Square}" Content="&#xE72C;"
-                        ToolTip="Refresh from Steam (F5)" Click="OnRefresh" />
+                <StackPanel Grid.Column="4" Orientation="Horizontal">
+                    <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0,0,8,0" Padding="10,5,10,6" Content="AUTO"
+                                  ToolTip="Refresh every minute while Dispatch is in focus, and highlight servers that appear"
+                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged" />
+                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" Content="&#xE72C;"
+                            ToolTip="Refresh from Steam (F5)" Click="OnRefresh" />
+                </StackPanel>
             </Grid>
 
             <!-- Filters -->
@@ -167,14 +174,27 @@
                                     <ColumnDefinition Width="150" />
                                     <ColumnDefinition Width="86" />
                                 </Grid.ColumnDefinitions>
-                                <Grid Margin="12,0">
+                                <Rectangle x:Name="NewMark" Width="3" HorizontalAlignment="Left" Margin="-1,-1,0,-1"
+                                           Fill="{StaticResource RedBrush}" Visibility="Collapsed" ToolTip="New since the list first loaded" />
+                                <Grid Margin="8,0,12,0">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="NameText" Text="{Binding Name}" FontFamily="{StaticResource HeadFont}" FontSize="15"
+                                    <TextBlock x:Name="Star" Text="&#xE734;" FontFamily="{StaticResource IconFont}" FontSize="13" Width="16"
+                                               VerticalAlignment="Center" Margin="0,1,6,0" Foreground="{StaticResource TextFaintBrush}"
+                                               Background="Transparent" Cursor="Hand" Opacity="0" Tag="star"
+                                               MouseLeftButtonUp="OnStarClick" ToolTip="Follow this host: pin their server and alert me when it appears" />
+                                    <TextBlock x:Name="NameText" Grid.Column="1" Text="{Binding Name}" FontFamily="{StaticResource HeadFont}" FontSize="15"
                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding Name}" />
-                                    <Ellipse x:Name="Dot" Grid.Column="1" Width="9" Height="9" Fill="White" Margin="10,1,0,0"
+                                    <Border x:Name="FriendBadge" Grid.Column="2" Margin="10,1,0,0" Padding="5,0,5,1" CornerRadius="2"
+                                            BorderBrush="{StaticResource RedBrush}" BorderThickness="1" VerticalAlignment="Center"
+                                            Visibility="Collapsed" ToolTip="{Binding FriendTip}">
+                                        <TextBlock Text="FRIEND" FontFamily="{StaticResource HeadFont}" FontSize="10" Foreground="{StaticResource RedHotBrush}" />
+                                    </Border>
+                                    <Ellipse x:Name="Dot" Grid.Column="3" Width="9" Height="9" Fill="White" Margin="10,1,0,0"
                                              HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Hidden" />
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding SlotsText}" Margin="12,0" VerticalAlignment="Center"
@@ -203,6 +223,22 @@
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                     <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                                    <Setter TargetName="Star" Property="Opacity" Value="1" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                    <Setter TargetName="Star" Property="Opacity" Value="1" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsFollowed}" Value="True">
+                                    <Setter TargetName="Star" Property="Text" Value="&#xE735;" />
+                                    <Setter TargetName="Star" Property="Foreground" Value="{StaticResource RedHotBrush}" />
+                                    <Setter TargetName="Star" Property="Opacity" Value="1" />
+                                    <Setter TargetName="Star" Property="ToolTip" Value="Following this host. Click to stop." />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsFriend}" Value="True">
+                                    <Setter TargetName="FriendBadge" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsNew}" Value="True">
+                                    <Setter TargetName="NewMark" Property="Visibility" Value="Visible" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding PingLevel}" Value="Good">
                                     <Setter TargetName="PingText" Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -237,6 +273,16 @@
                 <TextBlock x:Name="Status" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" FontSize="12"
                            Foreground="{StaticResource TextDimBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,16,0" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="RecentButton" Style="{StaticResource Ghost}" Margin="0,0,8,0"
+                            ToolTip="Rejoin a server you joined recently" Click="OnRecent">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE81C;" VerticalAlignment="Center" Margin="0,1,8,0" />
+                            <TextBlock Text="RECENT" />
+                        </StackPanel>
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="RecentMenu" Placement="Top" />
+                        </Button.ContextMenu>
+                    </Button>
                     <Button x:Name="ClipboardButton" Style="{StaticResource Ghost}" Margin="0,0,8,0" Visibility="Collapsed"
                             ToolTip="A Bodycam invite link is on your clipboard (Ctrl+Shift+V)" Click="OnJoinClipboard">
                         <StackPanel Orientation="Horizontal">

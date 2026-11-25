@@ -58,6 +58,21 @@ namespace Dispatch.Steam
         public static extern bool SteamAPI_ISteamUtils_GetAPICallResult(
             IntPtr self, ulong call, out uint result, int size, int expectedCallback, [MarshalAs(UnmanagedType.I1)] out bool failed);
 
+        /// <summary>k_EFriendFlagImmediate: the user's actual friends.</summary>
+        public const int FriendFlagImmediate = 0x04;
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr SteamAPI_SteamFriends_v017();
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int SteamAPI_ISteamFriends_GetFriendCount(IntPtr self, int flags);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern ulong SteamAPI_ISteamFriends_GetFriendByIndex(IntPtr self, int index, int flags);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr SteamAPI_ISteamFriends_GetFriendPersonaName(IntPtr self, ulong friend);
+
         /// <summary>Size of SteamNetworkPingLocation_t, an opaque blob.</summary>
         public const int PingLocationSize = 512;
 

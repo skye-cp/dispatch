@@ -50,6 +50,20 @@ namespace Dispatch
         private bool quiet;
         private DateTime launchConfirmUntil;
 
+        private static readonly TimeSpan WatchEvery = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan NewFor = TimeSpan.FromSeconds(90);
+        private readonly FollowList follows = new FollowList();
+        private readonly RecentList recent = new RecentList();
+        private readonly DispatcherTimer watchTimer;
+        private readonly Dictionary<string, Server> watchFound = new Dictionary<string, Server>();
+        private static readonly TimeSpan GoneAfter = TimeSpan.FromMinutes(3);
+        private readonly Dictionary<string, DateTime> followedSeen = new Dictionary<string, DateTime>();
+        private bool followSeenReady;
+        private DateTime? baselineUtc;
+        private bool autoRefresh;
+        private bool watching;
+        private ReleaseInfo latestRelease;
+
         /// <param name="demo">Shows invented servers and leaves Steam and saved settings alone (for screenshots).</param>
         public MainWindow(bool demo = false)
         {
@@ -77,6 +91,10 @@ namespace Dispatch
                     ShowDefaultStatus();
                 }
             };
+
+            // Every minute: auto-refresh while focused (if on), otherwise a quiet check on followed hosts.
+            watchTimer = new DispatcherTimer { Interval = WatchEvery };
+            watchTimer.Tick += (s, e) => OnWatchTick();
 
             // Settings are saved shortly after every change, so a crash or forced close keeps them.
             saveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -106,7 +124,9 @@ namespace Dispatch
             Loaded += (s, e) =>
             {
                 clock.Start();
+                watchTimer.Start();
                 _ = UpdateAsync(false);
+                _ = CheckForUpdateAsync();
             };
             Activated += (s, e) => CheckClipboard();
             Closing += (s, e) =>
@@ -224,6 +244,12 @@ namespace Dispatch
             if (lookup == cts)
             {
                 await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                if (baselineUtc == null && lastError == null)
+                {
+                    // Servers that show up after this first full load count as new.
+                    baselineUtc = DateTime.UtcNow;
+                }
+
                 Render();
             }
         }
@@ -233,6 +259,7 @@ namespace Dispatch
         private void Render()
         {
             var selected = (List.SelectedItem as Server)?.Owner;
+            Annotate();
             var visible = browser.Visible(sortKey, sortDescending);
             List.ItemsSource = visible;
             if (selected != null)
@@ -756,7 +783,7 @@ namespace Dispatch
         {
             while (d != null && !(d is ListBoxItem))
             {
-                if (d is FrameworkElement fe && fe.Tag is string kind && FilterKinds.Contains(kind))
+                if (d is FrameworkElement fe && fe.Tag is string kind && (FilterKinds.Contains(kind) || kind == "star"))
                 {
                     return fe;
                 }
@@ -942,6 +969,10 @@ namespace Dispatch
                 return;
             }
 
+            var follow = new MenuItem { Header = s.IsFollowed ? "Unfollow host" : "Follow host", Tag = "filter" };
+            follow.Click += (o, a) => ToggleFollow(s);
+            RowMenu.Items.Add(follow);
+
             var separator = new Separator { Tag = "filter" };
             RowMenu.Items.Add(separator);
             foreach (var kind in FilterKinds)
@@ -955,6 +986,313 @@ namespace Dispatch
                 var k = kind;
                 item.Click += (o, a) => ToggleFilter(k, s);
                 RowMenu.Items.Add(item);
+            }
+        }
+
+        // ---------- friends, follows, new servers ----------
+
+        /// <summary>Marks friends' and followed hosts' servers and new arrivals, then checks for followed hosts coming online.</summary>
+        private void Annotate()
+        {
+            var now = DateTime.UtcNow;
+            var friends = client.Friends;
+            var all = browser.All();
+            foreach (var s in all)
+            {
+                s.IsFriend = friends.TryGetValue(s.Owner, out var friendName);
+                s.FriendName = friendName ?? "";
+                s.IsFollowed = follows.Contains(s.Owner);
+                var seen = browser.FirstSeenUtc(s.Id);
+                s.IsNew = baselineUtc.HasValue && seen > baselineUtc.Value && now - seen < NewFor;
+            }
+
+            follows.Refresh(all);
+            if (!Busy && !watching)
+            {
+                // Only on complete results: a refresh in progress briefly empties the list.
+                CheckFollowedOnline(all.Concat(watchFound.Values), now);
+            }
+        }
+
+        /// <summary>
+        /// Alerts when a followed host's server appears after being gone for a while. Hosts already
+        /// online at start, or seen within the last few minutes, don't alert.
+        /// </summary>
+        private void CheckFollowedOnline(IEnumerable<Server> servers, DateTime now)
+        {
+            if (baselineUtc == null)
+            {
+                return;
+            }
+
+            var online = servers.Where(s => follows.Contains(s.Owner)).GroupBy(s => s.Owner).Select(g => g.First()).ToList();
+            var appeared = online.Where(s => !followedSeen.TryGetValue(s.Owner, out var last) || now - last > GoneAfter).ToList();
+            foreach (var s in online)
+            {
+                followedSeen[s.Owner] = now;
+            }
+
+            if (followSeenReady && appeared.Count > 0)
+            {
+                Alert(appeared);
+            }
+
+            followSeenReady = true;
+        }
+
+        private void Alert(List<Server> appeared)
+        {
+            var first = appeared[0];
+            var text = appeared.Count == 1
+                ? "★ " + first.Name + " is hosting " + first.Mode + " on " + first.MapName + "."
+                : "★ " + string.Join(", ", appeared.Select(s => s.Name)) + " are hosting.";
+            Say(text);
+            System.Media.SystemSounds.Exclamation.Play();
+            if (!IsActive)
+            {
+                FlashTaskbar();
+            }
+        }
+
+        private void OnStarClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement el && el.DataContext is Server s)
+            {
+                ToggleFollow(s);
+            }
+        }
+
+        private void ToggleFollow(Server s)
+        {
+            var on = follows.Toggle(s.Owner, s.Name);
+            if (on)
+            {
+                // Already online when followed: no alert for it now.
+                followedSeen[s.Owner] = DateTime.UtcNow;
+            }
+
+            Render();
+            QueueSave();
+            Say(on
+                ? "Following " + s.Name + ". Their server stays on top, and Dispatch alerts you when it appears."
+                : "Stopped following " + s.Name + ".");
+        }
+
+        private async void OnWatchTick()
+        {
+            if (Busy || watching)
+            {
+                return;
+            }
+
+            if (autoRefresh && IsActive)
+            {
+                await UpdateAsync(true);
+            }
+
+            if (follows.Hosts.Count > 0 && !demo && !Busy)
+            {
+                await WatchAsync();
+            }
+        }
+
+        /// <summary>A quiet check of followed hosts only, so alerts work without refreshing the whole list.</summary>
+        private async Task WatchAsync()
+        {
+            watching = true;
+            try
+            {
+                var queries = follows.Hosts.Take(10).Select(h => LobbyQuery.HostId(h.Owner)).ToList();
+                var found = new Dictionary<string, Server>();
+                await client.RunAsync(queries, (i, servers) =>
+                {
+                    lock (found)
+                    {
+                        foreach (var s in servers)
+                        {
+                            found[s.Owner] = s;
+                        }
+                    }
+                }, null, CancellationToken.None);
+                watchFound.Clear();
+                foreach (var p in found)
+                {
+                    watchFound[p.Key] = p.Value;
+                }
+
+                Render();
+            }
+            catch (Exception e) when (e is LookupException || e is LocatorException)
+            {
+                // The next tick tries again; nothing to tell the user.
+            }
+            finally
+            {
+                watching = false;
+            }
+        }
+
+        private void OnAutoChanged(object sender, RoutedEventArgs e)
+        {
+            if (quiet)
+            {
+                return;
+            }
+
+            autoRefresh = AutoToggle.IsChecked == true;
+            QueueSave();
+            Say(autoRefresh
+                ? "Auto-refresh on: every minute while Dispatch is in focus. New servers get a red mark."
+                : "Auto-refresh off.");
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FlashInfo
+        {
+            public uint Size;
+            public IntPtr Window;
+            public uint Flags;
+            public uint Count;
+            public uint Timeout;
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FlashWindowEx(ref FlashInfo info);
+
+        private void FlashTaskbar()
+        {
+            var info = new FlashInfo
+            {
+                Size = (uint)Marshal.SizeOf(typeof(FlashInfo)),
+                Window = new WindowInteropHelper(this).Handle,
+                Flags = 0x02 | 0x0C, // taskbar button, until the window comes to the front
+                Count = 0,
+                Timeout = 0,
+            };
+            FlashWindowEx(ref info);
+        }
+
+        // ---------- recent servers ----------
+
+        private void OnRecent(object sender, RoutedEventArgs e)
+        {
+            RecentMenu.Items.Clear();
+            if (recent.Items.Count == 0)
+            {
+                RecentMenu.Items.Add(new MenuItem { Header = "No recent servers yet. Servers you join appear here.", IsEnabled = false });
+            }
+
+            foreach (var r in recent.Items)
+            {
+                var item = new MenuItem
+                {
+                    Header = r.Name + "   ·   " + r.Mode + " · " + Catalog.MapName(r.Map),
+                    InputGestureText = Ago(DateTime.UtcNow - r.JoinedUtc),
+                };
+                var entry = r;
+                item.Click += (o, a) => _ = RejoinAsync(entry);
+                RecentMenu.Items.Add(item);
+            }
+
+            RecentMenu.PlacementTarget = RecentButton;
+            RecentMenu.IsOpen = true;
+        }
+
+        /// <summary>Rejoins by host: a host keeps their server across map changes, and re-hosting gives a new lobby, so ask Steam first.</summary>
+        private async Task RejoinAsync(RecentServer r)
+        {
+            if (demo)
+            {
+                Say("Demo mode: joining is off.");
+                return;
+            }
+
+            if (!ConfirmLaunch())
+            {
+                return;
+            }
+
+            Say("Looking for " + r.Name + "'s server…");
+            string link;
+            Server current = null;
+            try
+            {
+                var now = await client.FetchAsync(LobbyQuery.HostId(r.Owner), CancellationToken.None);
+                current = now.FirstOrDefault();
+                if (current == null)
+                {
+                    Say(r.Name + " is not hosting right now.", true);
+                    return;
+                }
+
+                link = current.Link;
+            }
+            catch (Exception e) when (e is LookupException || e is LocatorException)
+            {
+                link = r.Link;
+            }
+
+            if (Open(link))
+            {
+                if (current != null)
+                {
+                    recent.Add(current, DateTime.UtcNow);
+                    QueueSave();
+                }
+
+                Say("Rejoining " + r.Name + "…  watch the game.");
+            }
+        }
+
+        // ---------- update check ----------
+
+        /// <summary>At most every 12 hours; silent on any failure, and works only once the repository is public.</summary>
+        private async Task CheckForUpdateAsync()
+        {
+            if (demo || settings.Get("updateCheck", "1") == "0")
+            {
+                return;
+            }
+
+            var current = Assembly.GetExecutingAssembly().GetName().Version;
+            if (UpdateCheck.TryVersion(settings.Get("updateTag"), out var cached))
+            {
+                ShowUpdate(new ReleaseInfo(cached, settings.Get("updateTag"), settings.Get("updateUrl")), current);
+            }
+
+            long.TryParse(settings.Get("updateCheckedAt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
+            if (DateTime.UtcNow - new DateTime(Math.Max(0, ticks), DateTimeKind.Utc) < UpdateCheck.Interval)
+            {
+                return;
+            }
+
+            var latest = await UpdateCheck.LatestAsync();
+            settings.Set("updateCheckedAt", DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+            if (latest != null)
+            {
+                settings.Set("updateTag", latest.Tag);
+                settings.Set("updateUrl", latest.Url);
+                ShowUpdate(latest, current);
+            }
+
+            QueueSave();
+        }
+
+        private void ShowUpdate(ReleaseInfo latest, Version current)
+        {
+            var newer = UpdateCheck.IsNewer(latest, current) && latest.Url.StartsWith("https://github.com/", StringComparison.Ordinal);
+            latestRelease = newer ? latest : null;
+            UpdateLink.Content = newer ? "Update available: " + latest.Tag : "";
+            UpdateLink.ToolTip = newer ? "Open the release page on GitHub" : null;
+            UpdateLink.Visibility = newer ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void OnUpdate(object sender, RoutedEventArgs e)
+        {
+            if (latestRelease != null)
+            {
+                Open(latestRelease.Url);
             }
         }
 
@@ -1046,6 +1384,8 @@ namespace Dispatch
             var link = await FreshLinkAsync(s);
             if (link != null && Open(link))
             {
+                recent.Add(s, DateTime.UtcNow);
+                QueueSave();
                 Say("Joining " + s.Name + "…  watch the game.");
             }
         }
@@ -1255,6 +1595,13 @@ namespace Dispatch
                 client.LocationUtc = new DateTime(ticks, DateTimeKind.Utc);
             }
 
+            follows.Load(settings.GetRecords("followed"));
+            recent.Load(settings.GetRecords("recent"));
+            autoRefresh = settings.Get("autoRefresh") == "1";
+            quiet = true;
+            AutoToggle.IsChecked = autoRefresh;
+            quiet = false;
+
             // The drawer always starts closed; the bar above the list summarises the active filters.
             SetFiltersOpen(false);
 
@@ -1290,6 +1637,9 @@ namespace Dispatch
             settings.SetDouble("maxPing", f.MaxPing);
             settings.Set("sort", sortKey.ToString());
             settings.Set("descending", sortDescending ? "1" : "0");
+            settings.SetRecords("followed", follows.ToRecords());
+            settings.SetRecords("recent", recent.ToRecords());
+            settings.Set("autoRefresh", autoRefresh ? "1" : "0");
             if (!string.IsNullOrEmpty(client.Location))
             {
                 settings.Set("pingLocation", client.Location);
