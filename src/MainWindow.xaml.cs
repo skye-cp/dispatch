@@ -27,7 +27,7 @@ namespace Dispatch
         private static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan MessageFor = TimeSpan.FromSeconds(6);
         private static readonly int[] PingLimits = FilterState.PingLimits;
-        private static readonly string[] FilterKinds = { "mode", "map", "bots", "region", "ping" };
+        private static readonly string[] FilterKinds = { "mode", "map", "bots", "region", "age", "ping" };
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
@@ -65,6 +65,8 @@ namespace Dispatch
         private ReleaseInfo latestRelease;
         private int? playersOnline;
         private DateTime playersCheckedUtc = DateTime.MinValue;
+        private static readonly TimeSpan NewRoundFor = TimeSpan.FromMinutes(5);
+        private readonly LobbyAge lobbyAge = new LobbyAge();
 
         /// <param name="demo">Shows invented servers and leaves Steam and saved settings alone (for screenshots).</param>
         public MainWindow(bool demo = false)
@@ -222,7 +224,8 @@ namespace Dispatch
                         browser.ApplyPings(pings);
                         Render();
                     })),
-                    cts.Token);
+                    cts.Token,
+                    sampleAge: !browser.Filters.IsHostSearch);
             }
             catch (OperationCanceledException)
             {
@@ -251,6 +254,13 @@ namespace Dispatch
                 {
                     // Servers that show up after this first full load count as new.
                     baselineUtc = DateTime.UtcNow;
+                }
+
+                if (lastError == null && !demo && client.NewestCounter > 0)
+                {
+                    // The lookup's unfiltered sample: its newest server was created moments ago.
+                    lobbyAge.AddAnchor(client.NewestCounter, DateTime.UtcNow);
+                    QueueSave();
                 }
 
                 Render();
@@ -428,6 +438,21 @@ namespace Dispatch
 
             BotChips.Children.Add(MakeChip("On", "true", browser.Filters.Bots, "Servers that fill empty slots with bots"));
             BotChips.Children.Add(MakeChip("Off", "false", browser.Filters.Bots, "Servers without bots"));
+
+            foreach (var limit in FilterState.AgeLimits)
+            {
+                var chip = new ToggleButton
+                {
+                    Style = (Style)FindResource("Chip"),
+                    Content = FilterState.AgeLimitText(limit),
+                    Tag = limit,
+                    IsChecked = browser.Filters.AgeLimit == limit,
+                    ToolTip = limit > 0 ? "Servers created recently, likely still filling up" : "Long-running servers, likely with a settled crowd",
+                };
+                chip.Checked += (s, e) => OnAgeChip(limit, true);
+                chip.Unchecked += (s, e) => OnAgeChip(limit, false);
+                AgeChips.Children.Add(chip);
+            }
         }
 
         private static string ModeTip(string mode)
@@ -503,6 +528,19 @@ namespace Dispatch
                 }
             }
 
+            UpdateFilterSummary();
+            Render();
+        }
+
+        private void OnAgeChip(int limit, bool on)
+        {
+            if (quiet)
+            {
+                return;
+            }
+
+            browser.Filters.AgeLimit = on ? limit : 0;
+            SyncChips();
             UpdateFilterSummary();
             Render();
         }
@@ -606,6 +644,11 @@ namespace Dispatch
                 parts.Add(f.OneSidedBots == "true" ? "Bots on" : "Bots off");
             }
 
+            if (f.AgeLimit != 0)
+            {
+                parts.Add("Age " + FilterState.AgeLimitText(f.AgeLimit).ToLowerInvariant());
+            }
+
             FilterSummary.Text = FilterPanel.Visibility == Visibility.Visible ? "" : parts.Count == 0 ? "All servers" : string.Join("  ·  ", parts);
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
             ResetButton.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -627,7 +670,7 @@ namespace Dispatch
         private void ResetFilters()
         {
             quiet = true;
-            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, PingChips, BotChips })
+            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, PingChips, BotChips, AgeChips })
             {
                 foreach (var chip in panel.Children.OfType<ToggleButton>())
                 {
@@ -772,7 +815,8 @@ namespace Dispatch
         private void UpdateHeaders()
         {
             HeadPing.Content = HeaderText(SortKey.Ping, "PING");
-            HeadMode.Content = HeaderText(SortKey.Mode, "GAME MODE");
+            HeadMode.Content = HeaderText(SortKey.Mode, "MODE");
+            HeadAge.Content = HeaderText(SortKey.Age, "AGE");
             HeadMap.Content = HeaderText(SortKey.Map, "MAP");
             HeadRegion.Content = HeaderText(SortKey.Region, "REGION");
             HeadBots.Content = HeaderText(SortKey.Bots, "BOT");
@@ -851,6 +895,9 @@ namespace Dispatch
                     return s.Bots == "true" ? "bots on" : s.Bots == "false" ? "bots off" : null;
                 case "region":
                     return s.Region.Length > 0 ? s.RegionName : null;
+                case "age":
+                    var age = FilterState.AgeLimitFor(s.AgeMinutes);
+                    return age != 0 ? "age " + FilterState.AgeLimitText(age).ToLowerInvariant() : null;
                 case "ping":
                     var limit = FilterState.LimitFor(s.Ping);
                     return limit > 0 ? "ping ≤ " + limit + " ms" : null;
@@ -872,6 +919,8 @@ namespace Dispatch
                     return f.OneSidedBots == s.Bots;
                 case "region":
                     return f.Regions.Contains(s.Region);
+                case "age":
+                    return f.AgeLimit != 0 && f.AgeLimit == FilterState.AgeLimitFor(s.AgeMinutes);
                 case "ping":
                     return f.MaxPing > 0 && f.MaxPing == FilterState.LimitFor(s.Ping);
                 default:
@@ -920,6 +969,9 @@ namespace Dispatch
                         Toggle(f.Regions, code, removing);
                     }
 
+                    break;
+                case "age":
+                    f.AgeLimit = removing ? 0 : FilterState.AgeLimitFor(s.AgeMinutes);
                     break;
                 case "ping":
                     f.MaxPing = removing ? 0 : FilterState.LimitFor(s.Ping);
@@ -972,6 +1024,11 @@ namespace Dispatch
             foreach (var chip in PingChips.Children.OfType<ToggleButton>())
             {
                 chip.IsChecked = (int)chip.Tag == f.MaxPing;
+            }
+
+            foreach (var chip in AgeChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = (int)chip.Tag == f.AgeLimit;
             }
 
             foreach (var chip in RegionChips.Children.OfType<ToggleButton>())
@@ -1029,6 +1086,8 @@ namespace Dispatch
                 s.IsFollowed = follows.Contains(s.Owner);
                 var seen = browser.FirstSeenUtc(s.Id);
                 s.IsNew = baselineUtc.HasValue && seen > baselineUtc.Value && now - seen < NewFor;
+                s.AgeMinutes = demo ? DemoData.AgeFor(s.Id) : lobbyAge.AgeMinutes(LobbyAge.CounterOf(s.Id), now) ?? -1;
+                s.IsNewRound = demo ? DemoData.IsNewRound(s.Id) : now - browser.RoundStartUtc(s.Id) < NewRoundFor;
             }
 
             follows.Refresh(all);
@@ -1607,6 +1666,8 @@ namespace Dispatch
             }
 
             f.MaxPing = PingLimits.Contains((int)settings.GetDouble("maxPing", 0)) ? (int)settings.GetDouble("maxPing", 0) : 0;
+            f.AgeLimit = FilterState.AgeLimits.Contains((int)settings.GetDouble("ageLimit", 0)) ? (int)settings.GetDouble("ageLimit", 0) : 0;
+            lobbyAge.Load(settings.GetRecords("ageAnchors"), DateTime.UtcNow);
 
             if (Enum.TryParse(settings.Get("sort"), out SortKey key) && key != SortKey.Nearest)
             {
@@ -1664,6 +1725,8 @@ namespace Dispatch
             settings.SetList("bots", f.Bots);
             settings.SetList("regions", f.Regions);
             settings.SetDouble("maxPing", f.MaxPing);
+            settings.SetDouble("ageLimit", f.AgeLimit);
+            settings.SetRecords("ageAnchors", lobbyAge.ToRecords());
             settings.Set("sort", sortKey.ToString());
             settings.Set("descending", sortDescending ? "1" : "0");
             settings.SetRecords("followed", follows.ToRecords());

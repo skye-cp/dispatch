@@ -7,6 +7,7 @@ namespace Dispatch.Model
     internal enum SortKey
     {
         Ping,
+        Age,
         Nearest,
         Name,
         Mode,
@@ -37,6 +38,8 @@ namespace Dispatch.Model
     {
         private readonly Dictionary<string, Entry> cache = new Dictionary<string, Entry>();
         private readonly Dictionary<string, DateTime> firstSeen = new Dictionary<string, DateTime>();
+        private readonly Dictionary<string, string> lastState = new Dictionary<string, string>();
+        private readonly Dictionary<string, DateTime> roundStart = new Dictionary<string, DateTime>();
 
         public FilterState Filters { get; } = new FilterState();
 
@@ -57,8 +60,24 @@ namespace Dispatch.Model
                 {
                     firstSeen[s.Id] = nowUtc;
                 }
+
+                // A host keeps their lobby across rounds; a new map or mode means a new round began.
+                var state = s.Mode + "|" + s.Map;
+                if (lastState.TryGetValue(s.Id, out var before) && before != state)
+                {
+                    roundStart[s.Id] = nowUtc;
+                }
+
+                lastState[s.Id] = state;
             }
         }
+
+        /// <summary>When a new round was last seen to start on this server, if one was.</summary>
+        public DateTime RoundStartUtc(string id) => roundStart.TryGetValue(id, out var t) ? t : DateTime.MinValue;
+
+        /// <summary>The highest lobby counter among the given servers (the newest lobby), or 0.</summary>
+        public static uint NewestCounter(IEnumerable<Server> servers) =>
+            servers.Select(s => LobbyAge.CounterOf(s.Id)).DefaultIfEmpty(0u).Max();
 
         public void Invalidate() => cache.Clear();
 
@@ -154,6 +173,12 @@ namespace Dispatch.Model
                     break;
                 case SortKey.Slots:
                     sorted = descending ? list.OrderByDescending(s => s.Limit) : list.OrderBy(s => s.Limit);
+                    break;
+                case SortKey.Age:
+                    // Unknown ages always go last.
+                    sorted = descending
+                        ? list.OrderBy(s => s.AgeMinutes < 0).ThenByDescending(s => s.AgeMinutes)
+                        : list.OrderBy(s => s.AgeMinutes < 0).ThenBy(s => s.AgeMinutes);
                     break;
                 case SortKey.Ping:
                     // Unknown pings always go last, whichever the direction.
