@@ -32,12 +32,17 @@ namespace Dispatch.Steam
 
             var queries = new List<LobbyQuery>();
             string knownLocation = null;
+            var sampleAge = false;
             string line;
             while ((line = input.ReadLine()) != null)
             {
                 if (Protocol.TryDecodeLocationHeader(line, out var location))
                 {
                     knownLocation = location;
+                }
+                else if (line == Protocol.AgeSampleHeader)
+                {
+                    sampleAge = true;
                 }
                 else if (line.Length > 0)
                 {
@@ -80,6 +85,11 @@ namespace Dispatch.Steam
                     RunOne(i, queries[i], matchmaking, utils, ping, output);
                 }
 
+                if (sampleAge)
+                {
+                    SampleNewest(matchmaking, utils, output);
+                }
+
                 ping.Finish(output);
             }
             finally
@@ -115,6 +125,44 @@ namespace Dispatch.Steam
             catch (EntryPointNotFoundException)
             {
                 // An unknown library version: friends simply aren't marked.
+            }
+        }
+
+        /// <summary>
+        /// One unfiltered request for the age estimate: the newest of the nearest 50 servers in any mode was
+        /// created moments ago, whatever filters the player uses. Reports only the highest lobby counter.
+        /// </summary>
+        private static void SampleNewest(IntPtr matchmaking, IntPtr utils, TextWriter output)
+        {
+            SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter(matchmaking, DistanceWorldwide);
+            SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter(matchmaking, Utf8(LobbyQuery.InGameKey), Utf8("1"), (int)Comparison.Equal);
+            var call = SteamAPI_ISteamMatchmaking_RequestLobbyList(matchmaking);
+            var clock = Stopwatch.StartNew();
+            bool failed;
+            while (!SteamAPI_ISteamUtils_IsAPICallCompleted(utils, call, out failed))
+            {
+                if (clock.Elapsed > RequestTimeout)
+                {
+                    return;
+                }
+
+                Thread.Sleep(15);
+            }
+
+            if (failed || !SteamAPI_ISteamUtils_GetAPICallResult(utils, call, out var count, sizeof(uint), LobbyMatchListCallback, out failed) || failed)
+            {
+                return;
+            }
+
+            uint newest = 0;
+            for (var i = 0; i < (int)count; i++)
+            {
+                newest = Math.Max(newest, (uint)(SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i) & 0xFFFFFFFF));
+            }
+
+            if (count >= LobbyAge.MinServersForAnchor && newest > 0)
+            {
+                output.WriteLine(Protocol.EncodeAnchor(newest));
             }
         }
 

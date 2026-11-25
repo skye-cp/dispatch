@@ -29,6 +29,20 @@ namespace Dispatch.Model
         /// <summary>Highest ping to show, in ms; 0 means any. Servers whose ping is not known yet stay visible.</summary>
         public int MaxPing { get; set; }
 
+        /// <summary>Server age filters, in minutes: positive keeps servers up to that age, negative keeps older ones.</summary>
+        public static readonly int[] AgeLimits = { 15, 60, -60 };
+
+        /// <summary>One of <see cref="AgeLimits"/>, or 0 for any age. Servers with no estimate stay visible.</summary>
+        public int AgeLimit { get; set; }
+
+        /// <summary>The age filter a server of this age falls in.</summary>
+        public static int AgeLimitFor(double minutes) => minutes < 0 ? 0 : minutes <= 15 ? 15 : minutes <= 60 ? 60 : -60;
+
+        public static string AgeLimitText(int limit) => limit > 0 ? "Under " + (limit < 60 ? limit + " min" : limit / 60 + " h") : "Over " + (-limit / 60) + " h";
+
+        public static bool AgeMatches(int limit, double minutes) =>
+            limit == 0 || minutes < 0 || (limit > 0 ? minutes <= limit : minutes > -limit);
+
         /// <summary>The smallest offered limit that still includes this ping, or 0 if none does.</summary>
         public static int LimitFor(int ping) => ping < 0 ? 0 : PingLimits.FirstOrDefault(limit => ping <= limit);
 
@@ -36,7 +50,7 @@ namespace Dispatch.Model
 
         public int ActiveCount =>
             (Modes.Count > 0 ? 1 : 0) + (Maps.Count > 0 ? 1 : 0) + (OneSidedBots != null ? 1 : 0) +
-            (Regions.Count > 0 ? 1 : 0) + (MaxPing > 0 ? 1 : 0) + (string.IsNullOrWhiteSpace(Text) ? 0 : 1);
+            (Regions.Count > 0 ? 1 : 0) + (MaxPing > 0 ? 1 : 0) + (AgeLimit != 0 ? 1 : 0) + (string.IsNullOrWhiteSpace(Text) ? 0 : 1);
 
         public void Reset()
         {
@@ -45,6 +59,7 @@ namespace Dispatch.Model
             Bots.Clear();
             Regions.Clear();
             MaxPing = 0;
+            AgeLimit = 0;
             Text = "";
             ExactHost = "";
         }
@@ -78,6 +93,11 @@ namespace Dispatch.Model
             }
 
             if (MaxPing > 0 && s.Ping >= 0 && s.Ping > MaxPing)
+            {
+                return false;
+            }
+
+            if (!AgeMatches(AgeLimit, s.AgeMinutes))
             {
                 return false;
             }

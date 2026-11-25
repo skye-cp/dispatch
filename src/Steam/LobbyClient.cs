@@ -36,11 +36,15 @@ namespace Dispatch.Steam
         /// <summary>The player's Steam friends (SteamID → name) from the latest lookup. Memory only.</summary>
         public IReadOnlyDictionary<string, string> Friends { get; private set; } = new Dictionary<string, string>();
 
+        /// <summary>Highest lobby counter from the latest age sample, or 0. See <see cref="LobbyAge"/>.</summary>
+        public uint NewestCounter { get; private set; }
+
         /// <param name="onAnswer">Called on a worker thread with each request's index and servers.</param>
         /// <param name="onPings">Called on a worker thread with pings measured after the servers were listed.</param>
+        /// <param name="sampleAge">Also take one unfiltered sample of the newest servers, for age estimates.</param>
         public Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
-            Action<Dictionary<string, int>> onPings, CancellationToken token) =>
-            Task.Run(() => Run(queries, onAnswer, onPings, token), token);
+            Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge = false) =>
+            Task.Run(() => Run(queries, onAnswer, onPings, token, sampleAge), token);
 
         public async Task<List<Server>> FetchAsync(LobbyQuery query, CancellationToken token)
         {
@@ -50,7 +54,7 @@ namespace Dispatch.Steam
         }
 
         private void Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
-            Action<Dictionary<string, int>> onPings, CancellationToken token)
+            Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge)
         {
             if (steamApi == null)
             {
@@ -89,6 +93,11 @@ namespace Dispatch.Steam
                     if (LocationFresh)
                     {
                         stdin.WriteLine(Protocol.EncodeLocationHeader(Location));
+                    }
+
+                    if (sampleAge)
+                    {
+                        stdin.WriteLine(Protocol.AgeSampleHeader);
                     }
 
                     foreach (var q in queries)
@@ -136,6 +145,9 @@ namespace Dispatch.Steam
                                     LocationUtc = DateTime.UtcNow;
                                 }
 
+                                break;
+                            case Protocol.AnchorRecord:
+                                NewestCounter = Protocol.DecodeAnchor(f);
                                 break;
                             case Protocol.FriendRecord:
                                 if (Protocol.TryDecodeFriend(f, out var friendId, out var friendName))

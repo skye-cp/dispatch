@@ -37,6 +37,14 @@ namespace Dispatch.Model
         /// <summary>Set by the window: the server appeared after the list first loaded.</summary>
         public bool IsNew { get; set; }
 
+        /// <summary>Set by the window: estimated minutes since the server was created, or -1 if unknown.</summary>
+        public double AgeMinutes { get; set; } = -1;
+
+        /// <summary>Set by the window: the map or mode changed recently, so a new round has started.</summary>
+        public bool IsNewRound { get; set; }
+
+        public string AgeText => LobbyAge.Format(AgeMinutes);
+
         public bool IsPinned => IsFriend || IsFollowed;
 
         public string FriendTip => IsFriend ? "Hosted by your Steam friend " + FriendName : null;

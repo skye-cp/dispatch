@@ -36,6 +36,8 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Host search.** Type a host's name to find the server a friend is playing on.
 - **Join, invite, rejoin.** One click to join; invite links put friends in the same server; **Recent** rejoins a host after a disconnect.
 - **Auto-refresh.** Optional, every minute while Dispatch is in focus, with new servers marked.
+- **Server age.** How long each server has been up, to tell fresh servers still filling up from established ones.
+- **New rounds.** Servers whose map just changed are marked, the best moment to join.
 - **Players online.** How many people are playing Bodycam right now, from Steam.
 - **Light and fast.** One small executable that opens in half a second.
 
@@ -96,6 +98,14 @@ Dispatch is unofficial and not endorsed by Reissad Studio. It gives no gameplay 
 <br>
 
 Steam doesn't publish them for Bodycam servers: players connect to a host without joining its Steam lobby, so only the host is listed. <i>Slots</i> is the server's size, and the status line shows how many people are playing Bodycam in total. If a server turns out to be full, the game says the connection failed and returns to the menu.
+
+</details>
+
+<details>
+<summary><b>How is a server's age worked out?</b></summary>
+<br>
+
+Steam numbers lobbies from one counter shared by every game, which rises steadily (tens of thousands a minute). Each refresh notes the newest server's number, which was created moments ago, so the gap to any other server's number gives its age. Expect accuracy within a few minutes. A **NEW ROUND** mark means the server's map or mode changed since an earlier refresh, so turn on **AUTO** to catch them.
 
 </details>
 

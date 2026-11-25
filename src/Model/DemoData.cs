@@ -36,6 +36,23 @@ namespace Dispatch.Model
             [OwnerOf(6)] = "Sam",
         };
 
+        private const ulong FirstId = 100000000000000000UL;
+
+        /// <summary>Invented server ages in minutes, one per row.</summary>
+        private static readonly int[] Ages = { 3, 12, 25, 40, 8, 55, 95, 18, 6, 140, 33, 70, 15, 47, 22, 9 };
+
+        /// <summary>The demo row shown as having just started a new round.</summary>
+        private const int NewRoundRow = 2;
+
+        public static double AgeFor(string id) => RowOf(id) is int row && row < Ages.Length ? Ages[row] : -1;
+
+        public static bool IsNewRound(string id) => RowOf(id) == NewRoundRow;
+
+        private static int? RowOf(string id) =>
+            ulong.TryParse(id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n >= FirstId && n < FirstId + (ulong)Rows.Length
+                ? (int)(n - FirstId)
+                : (int?)null;
+
         /// <summary>An invented "playing now" total for the demo.</summary>
         public const int PlayersOnline = 4812;
 
@@ -50,7 +67,7 @@ namespace Dispatch.Model
         {
             var servers = Rows.Select((r, i) => new Server
             {
-                Id = (100000000000000000UL + (ulong)i).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Id = (FirstId + (ulong)i).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Owner = OwnerOf(i),
                 Name = r.Name,
                 Mode = r.Mode,

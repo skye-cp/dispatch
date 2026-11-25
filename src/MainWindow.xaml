@@ -1,7 +1,7 @@
 <Window x:Class="Dispatch.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Dispatch" Width="1120" Height="760" MinWidth="880" MinHeight="500"
+        Title="Dispatch" Width="1180" Height="760" MinWidth="1000" MinHeight="500"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="14"
@@ -108,10 +108,13 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <WrapPanel x:Name="PingChips" />
                         <TextBlock Grid.Column="1" Style="{StaticResource Label}" Text="BOTS" Margin="28,5,12,0" />
                         <WrapPanel x:Name="BotChips" Grid.Column="2" />
+                        <TextBlock Grid.Column="3" Style="{StaticResource Label}" Text="AGE" Margin="28,5,12,0" />
+                        <WrapPanel x:Name="AgeChips" Grid.Column="4" />
                     </Grid>
                 </Grid>
             </Border>
@@ -124,11 +127,12 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
                             <ColumnDefinition Width="76" />
+                            <ColumnDefinition Width="146" />
                             <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="170" />
-                            <ColumnDefinition Width="70" />
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="86" />
+                            <ColumnDefinition Width="66" />
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="84" />
                         </Grid.ColumnDefinitions>
                         <Button x:Name="HeadName" Style="{StaticResource HeaderCell}" Tag="Name" Click="OnSort" />
                         <Button x:Name="HeadSlots" Grid.Column="1" Style="{StaticResource HeaderCell}" Tag="Slots" Click="OnSort"
@@ -137,7 +141,9 @@
                         <Button x:Name="HeadMap" Grid.Column="3" Style="{StaticResource HeaderCell}" Tag="Map" Click="OnSort" />
                         <Button x:Name="HeadBots" Grid.Column="4" Style="{StaticResource HeaderCell}" Tag="Bots" Click="OnSort" />
                         <Button x:Name="HeadRegion" Grid.Column="5" Style="{StaticResource HeaderCell}" Tag="Region" Click="OnSort" />
-                        <Button x:Name="HeadPing" Grid.Column="6" Style="{StaticResource HeaderCell}" Tag="Ping" Click="OnSort"
+                        <Button x:Name="HeadAge" Grid.Column="6" Style="{StaticResource HeaderCell}" Tag="Age" Click="OnSort"
+                                ToolTip="How long ago the server was created, estimated from Steam's lobby numbering." />
+                        <Button x:Name="HeadPing" Grid.Column="7" Style="{StaticResource HeaderCell}" Tag="Ping" Click="OnSort"
                                 ToolTip="Steam's estimate of your round trip to the host, in milliseconds, through its relay network." />
                     </Grid>
                 </Border>
@@ -168,16 +174,18 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="200" />
                                     <ColumnDefinition Width="76" />
+                                    <ColumnDefinition Width="146" />
                                     <ColumnDefinition Width="160" />
-                                    <ColumnDefinition Width="170" />
-                                    <ColumnDefinition Width="70" />
-                                    <ColumnDefinition Width="150" />
-                                    <ColumnDefinition Width="86" />
+                                    <ColumnDefinition Width="66" />
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="84" />
                                 </Grid.ColumnDefinitions>
                                 <Rectangle x:Name="NewMark" Width="3" HorizontalAlignment="Left" Margin="-1,-1,0,-1"
                                            Fill="{StaticResource RedBrush}" Visibility="Collapsed" ToolTip="New since the list first loaded" />
                                 <Grid Margin="8,0,12,0">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
@@ -194,7 +202,12 @@
                                             Visibility="Collapsed" ToolTip="{Binding FriendTip}">
                                         <TextBlock Text="FRIEND" FontFamily="{StaticResource HeadFont}" FontSize="10" Foreground="{StaticResource RedHotBrush}" />
                                     </Border>
-                                    <Ellipse x:Name="Dot" Grid.Column="3" Width="9" Height="9" Fill="White" Margin="10,1,0,0"
+                                    <Border x:Name="RoundBadge" Grid.Column="3" Margin="8,1,0,0" Padding="5,0,5,1" CornerRadius="2"
+                                            BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" VerticalAlignment="Center"
+                                            Visibility="Collapsed" ToolTip="The map or mode just changed: a new round has started. Best moment to join.">
+                                        <TextBlock Text="NEW ROUND" FontFamily="{StaticResource HeadFont}" FontSize="10" Foreground="{StaticResource TextBrush}" />
+                                    </Border>
+                                    <Ellipse x:Name="Dot" Grid.Column="4" Width="9" Height="9" Fill="White" Margin="10,1,0,0"
                                              HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Hidden" />
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding SlotsText}" Margin="12,0" VerticalAlignment="Center"
@@ -213,7 +226,11 @@
                                            Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis"
                                            HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="region"
                                            MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
-                                <StackPanel Grid.Column="6" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="6" Text="{Binding AgeText}" Margin="12,0" VerticalAlignment="Center" FontSize="15"
+                                           Foreground="{StaticResource TextDimBrush}"
+                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="age"
+                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
+                                <StackPanel Grid.Column="7" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
                                     <Rectangle x:Name="PingBar" Width="3" Height="12" Margin="0,1,8,0" Fill="{StaticResource LineStrongBrush}" />
                                     <TextBlock x:Name="PingText" Text="{Binding PingText}" FontSize="15" Foreground="{StaticResource TextFaintBrush}"
                                                Style="{StaticResource CellLink}" Tag="ping"
@@ -236,6 +253,9 @@
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsFriend}" Value="True">
                                     <Setter TargetName="FriendBadge" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsNewRound}" Value="True">
+                                    <Setter TargetName="RoundBadge" Property="Visibility" Value="Visible" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsNew}" Value="True">
                                     <Setter TargetName="NewMark" Property="Visibility" Value="Visible" />

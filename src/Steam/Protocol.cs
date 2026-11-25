@@ -21,8 +21,10 @@ namespace Dispatch.Steam
         public const string LocationRecord = "P";
         public const string PingRecord = "G";
         public const string FriendRecord = "R";
+        public const string AnchorRecord = "A";
 
         private const string LocationHeader = "@location";
+        public const string AgeSampleHeader = "@age-sample";
         private const char FieldSep = '\t';
         private const char PartSep = '\u001f';
 
@@ -107,6 +109,11 @@ namespace Dispatch.Steam
         }
 
         public static string EncodeFriend(string steamId, string name) => Join(FriendRecord, steamId, name);
+
+        public static string EncodeAnchor(uint newestCounter) => Join(AnchorRecord, newestCounter.ToString(CultureInfo.InvariantCulture));
+
+        public static uint DecodeAnchor(string[] f) =>
+            f.Length > 1 && uint.TryParse(f[1], NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0;
 
         public static bool TryDecodeFriend(string[] f, out string steamId, out string name)
         {
