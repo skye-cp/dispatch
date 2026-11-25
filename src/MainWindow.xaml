@@ -48,22 +48,47 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Search, filter bar, reset, refresh. Each filter opens a small dropdown of chips. -->
-            <Grid Grid.Row="1" Margin="18,6,18,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="260" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid VerticalAlignment="Top">
-                    <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches all"
-                             TextChanged="OnSearchChanged" PreviewKeyDown="OnSearchKey" Padding="0,0,26,0" />
-                    <Button x:Name="ClearSearch" Style="{StaticResource Link}" AutomationProperties.Name="Clear search" FontFamily="{StaticResource IconFont}" FontSize="10"
-                            Content="&#xE711;" HorizontalAlignment="Right" Margin="0,0,3,0" Visibility="Collapsed"
-                            ToolTip="Clear (Esc)" Click="OnClearSearch" />
+            <!-- Browser-style toolbar: refresh, a full-width search and AUTO on one row; the filter buttons
+                 (each opening a small dropdown of chips) and RESET on the row beneath. -->
+            <Grid Grid.Row="1" Margin="18,6,18,2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" Margin="0,0,8,0" AutomationProperties.Name="Refresh"
+                            ToolTip="Refresh from Steam (F5), or scroll on past the top or bottom of the list" Click="OnRefresh">
+                        <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform><RotateTransform /></TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Button>
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches all"
+                                 AutomationProperties.Name="Search host names" ToolTip="Search host names (Ctrl+F)"
+                                 TextChanged="OnSearchChanged" PreviewKeyDown="OnSearchKey" Padding="24,0,26,0" />
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{StaticResource TextDimBrush}"
+                                   HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,1,0,0" IsHitTestVisible="False" />
+                        <Button x:Name="ClearSearch" Style="{StaticResource Link}" AutomationProperties.Name="Clear search" FontFamily="{StaticResource IconFont}" FontSize="10"
+                                Content="&#xE711;" HorizontalAlignment="Right" Margin="0,0,4,0" Visibility="Collapsed"
+                                ToolTip="Clear (Esc)" Click="OnClearSearch" />
+                    </Grid>
+                    <ToggleButton x:Name="AutoToggle" Grid.Column="2" Style="{StaticResource Chip}" Margin="8,0,0,0" Padding="10,5,10,6" AutomationProperties.Name="Auto-refresh"
+                                  VerticalAlignment="Center"
+                                  ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
+                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="AutoDot" Width="6" Height="6" Fill="{StaticResource OnRedBrush}" Margin="0,1,7,0"
+                                     VerticalAlignment="Center" Visibility="Collapsed" />
+                            <TextBlock Text="AUTO" />
+                        </StackPanel>
+                    </ToggleButton>
                 </Grid>
-                <WrapPanel x:Name="FilterBar" Grid.Column="1" Margin="10,0,4,0">
+                <WrapPanel x:Name="FilterBar" Grid.Row="1">
                     <Grid Margin="0,0,6,6">
                         <Button x:Name="ModeButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Mode filter" Click="OnFilterButton" ToolTip="Game modes to show">
                             <StackPanel Orientation="Horizontal">
@@ -178,26 +203,14 @@
                             </Border>
                         </Popup>
                     </Grid>
-                </WrapPanel>
-                <Button x:Name="ResetButton" Grid.Column="2" Style="{StaticResource Link}" Content="RESET" Margin="0,2,8,0"
-                        VerticalAlignment="Top" ToolTip="Clear every filter and the search" Click="OnReset" />
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top">
-                    <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0,0,8,0" Padding="10,5,10,6" AutomationProperties.Name="Auto-refresh"
-                                  ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
-                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged">
+                    <Button x:Name="ResetButton" Style="{StaticResource FilterButton}" Margin="0,0,6,6" Visibility="Collapsed" AutomationProperties.Name="Reset filters"
+                            ToolTip="Clear every filter and the search" Click="OnReset">
                         <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="AutoDot" Width="6" Height="6" Fill="{StaticResource OnRedBrush}" Margin="0,1,7,0"
-                                     VerticalAlignment="Center" Visibility="Collapsed" />
-                            <TextBlock Text="AUTO" />
+                            <TextBlock Text="&#xE711;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="0,1,8,0" VerticalAlignment="Center" Opacity="0.75" />
+                            <TextBlock Text="RESET" FontFamily="{StaticResource HeadFont}" FontSize="12" VerticalAlignment="Center" />
                         </StackPanel>
-                    </ToggleButton>
-                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" AutomationProperties.Name="Refresh"
-                            ToolTip="Refresh from Steam (F5), or scroll on past the top or bottom of the list" Click="OnRefresh">
-                        <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" RenderTransformOrigin="0.5,0.5">
-                            <TextBlock.RenderTransform><RotateTransform /></TextBlock.RenderTransform>
-                        </TextBlock>
                     </Button>
-                </StackPanel>
+                </WrapPanel>
             </Grid>
             <!-- Column header: the game's red bar -->
             <Grid Grid.Row="3" Margin="18,0,18,6">

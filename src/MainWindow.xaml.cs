@@ -139,13 +139,14 @@ namespace Dispatch
             Loaded += (s, e) =>
             {
                 Motion.Fade(Frame, 0, 1, 260);
-                Dispatcher.BeginInvoke(new Action(FitToFilterBar), DispatcherPriority.Loaded);
                 clock.Start();
                 watchTimer.Start();
                 _ = UpdateAsync(false);
                 _ = RefreshPlayersOnlineAsync();
                 _ = CheckForUpdateAsync();
             };
+            // Once the window has rendered, the filter buttons have their real sizes.
+            ContentRendered += (s, e) => FitToFilterBar();
             Activated += (s, e) => CheckClipboard();
             Closing += (s, e) =>
             {
@@ -730,33 +731,41 @@ namespace Dispatch
                 return;
             }
 
-            var buttons = 0.0;
-            foreach (UIElement child in FilterBar.Children)
-            {
-                child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                buttons += child.DesiredSize.Width;
-            }
-
-            // Everything else on the toolbar's line, plus room for RESET and for selections longer than "Any".
-            var others = ActualWidth - FilterBar.ActualWidth;
-            var reset = ResetButton.Visibility == Visibility.Visible ? 0 : 70;
-            var needed = Math.Ceiling(others + buttons + reset + 60);
             var available = SystemParameters.WorkArea.Width;
-            if (Width >= needed || needed > available)
+
+            for (var step = 0; step < 80 && Width < available && FilterBarTooNarrow(); step++)
             {
-                needed = Math.Min(Math.Max(Width, needed), available);
+                Width = Math.Min(available, Width + 20);
+                UpdateLayout();
             }
 
-            if (Width < needed)
+            if (Left + Width > SystemParameters.WorkArea.Right)
             {
-                Width = needed;
-                if (Left + Width > SystemParameters.WorkArea.Right)
-                {
-                    Left = Math.Max(SystemParameters.WorkArea.Left, SystemParameters.WorkArea.Right - Width);
-                }
+                Left = Math.Max(SystemParameters.WorkArea.Left, SystemParameters.WorkArea.Right - Width);
             }
+
         }
 
+        /// <summary>True while the filter buttons wrap, or leave no room on their line for RESET and longer selections.</summary>
+        private bool FilterBarTooNarrow()
+        {
+            var buttons = FilterBar.Children.OfType<FrameworkElement>().Where(b => b.Visibility == Visibility.Visible).ToList();
+            if (buttons.Count == 0)
+            {
+                return false;
+            }
+
+            var firstTop = buttons[0].TranslatePoint(new Point(0, 0), FilterBar).Y;
+            if (buttons.Any(b => b.TranslatePoint(new Point(0, 0), FilterBar).Y > firstTop + 1))
+            {
+                return true;
+            }
+
+            var last = buttons[buttons.Count - 1];
+            var lineEnd = last.TranslatePoint(new Point(last.ActualWidth, 0), FilterBar).X;
+            var reserve = (ResetButton.Visibility == Visibility.Visible ? 0 : 110) + 40;
+            return FilterBar.ActualWidth - lineEnd < reserve;
+        }
         // ---------- status ----------
 
         private void ShowDefaultStatus()
@@ -1031,8 +1040,33 @@ namespace Dispatch
             ShowFilter(PingButton, PingValue, f.MaxPing > 0 ? new List<string> { "≤ " + f.MaxPing + " ms" } : new List<string>());
             ShowFilter(BotButton, BotValue, f.OneSidedBots != null ? new List<string> { f.OneSidedBots == "true" ? "On" : "Off" } : new List<string>());
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
-            ResetButton.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
+            ShowReset(active > 0);
             QueueSave();
+        }
+
+        /// <summary>RESET fades in when something is filtered and out when nothing is.</summary>
+        private void ShowReset(bool show)
+        {
+            var visible = ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null;
+            if (show && !visible)
+            {
+                ResetButton.Tag = null;
+                ResetButton.Visibility = Visibility.Visible;
+                Motion.Fade(ResetButton, 0, 1, 180);
+            }
+            else if (!show && ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null)
+            {
+                // Tag marks a fade-out in progress, so a quick re-show isn't hidden by it.
+                ResetButton.Tag = "hiding";
+                Motion.Fade(ResetButton, 1, 0, 160, () =>
+                {
+                    if ((string)ResetButton.Tag == "hiding")
+                    {
+                        ResetButton.Visibility = Visibility.Collapsed;
+                        ResetButton.Tag = null;
+                    }
+                });
+            }
         }
 
         private static void ShowFilter(Button button, TextBlock value, List<string> selected)
@@ -1893,7 +1927,7 @@ namespace Dispatch
                 e.Handled = true;
                 _ = UpdateAsync(true);
             }
-            else if (ctrl && e.Key == Key.F)
+            else if (ctrl && (e.Key == Key.F || e.Key == Key.L))
             {
                 e.Handled = true;
                 SearchBox.Focus();

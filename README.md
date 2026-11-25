@@ -57,7 +57,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 > [!NOTE]
 > Releases are not code-signed yet, so Windows may warn about an unknown publisher on the first run. Choose **More info**, then **Run anyway**. See the [code signing policy](#code-signing-policy).
 
-To narrow the list, use the filter bar above it (each button opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset** clears everything.
+Search sits across the top, like a browser's address bar. To narrow the list, use the filter buttons beneath it (each opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset**, at the end of the filters, clears everything.
 
 ### Play with a friend
 
@@ -72,7 +72,7 @@ To narrow the list, use the filter bar above it (each button opens a small menu 
 | <kbd>Enter</kbd> or double-click | Join the selected server |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Copy its invite link |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Join the link on the clipboard |
-| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Search host names; <kbd>Enter</kbd> searches every server |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>Ctrl</kbd>+<kbd>L</kbd> | Search host names; <kbd>Enter</kbd> searches every server |
 | <kbd>F5</kbd>, or scroll on past the top or bottom | Refresh |
 | <kbd>Esc</kbd> | Clear the search |
 
