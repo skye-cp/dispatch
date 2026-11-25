@@ -35,7 +35,8 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Follow hosts.** Star a host to pin their server and get an alert when it appears.
 - **Host search.** Type a host's name to find the server a friend is playing on.
 - **Join, invite, rejoin.** One click to join; invite links put friends in the same server; **Recent** rejoins a host after a disconnect.
-- **Auto-refresh.** Optional, every minute while Dispatch is in focus, with new servers marked.
+- **Auto-refresh.** Optional, every minute while Dispatch is open, with new servers marked. Or pull past the top or bottom of the list to refresh.
+- **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites and alerts, with a mute button in the title bar.
 - **Server age.** How long each server has been up, to tell fresh servers still filling up from established ones.
 - **New rounds.** Servers whose map just changed are marked, the best moment to join.
 - **Players online.** How many people are playing Bodycam right now, from Steam.
@@ -72,7 +73,7 @@ To narrow the list, click a value in it (a mode, map, region and so on) or open 
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Copy its invite link |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Join the link on the clipboard |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Search host names; <kbd>Enter</kbd> searches every server |
-| <kbd>F5</kbd> | Refresh |
+| <kbd>F5</kbd>, or scroll on past the top or bottom | Refresh |
 | <kbd>Esc</kbd> | Clear the search |
 
 ## FAQ

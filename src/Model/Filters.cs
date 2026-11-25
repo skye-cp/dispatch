@@ -24,21 +24,21 @@ namespace Dispatch.Model
         public bool IsHostSearch => !string.IsNullOrEmpty(ExactHost);
 
         /// <summary>The ping limits offered as filters, in ms.</summary>
-        public static readonly int[] PingLimits = { 50, 100, 150 };
+        public static readonly int[] PingLimits = { 50, 100, 150, 200 };
 
         /// <summary>Highest ping to show, in ms; 0 means any. Servers whose ping is not known yet stay visible.</summary>
         public int MaxPing { get; set; }
 
         /// <summary>Server age filters, in minutes: positive keeps servers up to that age, negative keeps older ones.</summary>
-        public static readonly int[] AgeLimits = { 15, 60, -60 };
+        public static readonly int[] AgeLimits = { 15, 30, 60, -15, -30, -60 };
 
         /// <summary>One of <see cref="AgeLimits"/>, or 0 for any age. Servers with no estimate stay visible.</summary>
         public int AgeLimit { get; set; }
 
         /// <summary>The age filter a server of this age falls in.</summary>
-        public static int AgeLimitFor(double minutes) => minutes < 0 ? 0 : minutes <= 15 ? 15 : minutes <= 60 ? 60 : -60;
+        public static int AgeLimitFor(double minutes) => minutes < 0 ? 0 : minutes <= 15 ? 15 : minutes <= 30 ? 30 : minutes <= 60 ? 60 : -60;
 
-        public static string AgeLimitText(int limit) => limit > 0 ? "Under " + (limit < 60 ? limit + " min" : limit / 60 + " h") : "Over " + (-limit / 60) + " h";
+        public static string AgeLimitText(int limit) => (limit > 0 ? "Under " : "Over ") + (Math.Abs(limit) < 60 ? Math.Abs(limit) + " min" : Math.Abs(limit) / 60 + " h");
 
         public static bool AgeMatches(int limit, double minutes) =>
             limit == 0 || minutes < 0 || (limit > 0 ? minutes <= limit : minutes > -limit);
