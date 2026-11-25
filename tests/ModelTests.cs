@@ -151,6 +151,16 @@ namespace Dispatch.Tests
             Assert.Equal(0, f.MaxPing);
         }
 
+        [Fact]
+        public void DemoDataHonoursQueriesAndUsesNoRealIds()
+        {
+            var zombies = DemoData.For(LobbyQuery.Matches("Zombie"), DateTime.UtcNow);
+            Assert.NotEmpty(zombies);
+            Assert.All(zombies, s => Assert.Equal("Zombie", s.Mode));
+            Assert.Single(DemoData.For(LobbyQuery.HostName("night shift"), DateTime.UtcNow));
+            Assert.All(DemoData.For(LobbyQuery.Matches(), DateTime.UtcNow), s => Assert.False(s.Owner.StartsWith("7656119", StringComparison.Ordinal)));
+        }
+
         [Theory]
         [InlineData(-1, "Unknown", "—")]
         [InlineData(35, "Good", "35")]
