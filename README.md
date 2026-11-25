@@ -57,7 +57,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 > [!NOTE]
 > Releases are not code-signed yet, so Windows may warn about an unknown publisher on the first run. Choose **More info**, then **Run anyway**. See the [code signing policy](#code-signing-policy).
 
-To narrow the list, click a value in it (a mode, map, region and so on) or open **Filters** above it. The bar next to Filters summarises what is active, and **Reset** clears everything.
+To narrow the list, use the filter bar above it (each button opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset** clears everything.
 
 ### Play with a friend
 
