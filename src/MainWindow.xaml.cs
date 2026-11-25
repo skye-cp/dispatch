@@ -840,6 +840,11 @@ namespace Dispatch
             }
 
             browser.Filters.AgeLimit = on ? limit : 0;
+            if (on)
+            {
+                AgePopup.IsOpen = false;
+            }
+
             SyncChips();
             UpdateFilterSummary();
             Render();
@@ -860,6 +865,11 @@ namespace Dispatch
 
             quiet = false;
             browser.Filters.MaxPing = on ? limit : 0;
+            if (on)
+            {
+                PingPopup.IsOpen = false;
+            }
+
             UpdateFilterSummary();
             Render();
         }
@@ -915,76 +925,97 @@ namespace Dispatch
             quiet = false;
         }
 
+        /// <summary>Shows each category's selection on its filter-bar button, red-outlined when active.</summary>
         private void UpdateFilterSummary()
         {
             var f = browser.Filters;
-            var parts = new List<string>();
-            if (f.Modes.Count > 0)
-            {
-                parts.Add(string.Join(", ", Catalog.Modes.Where(f.Modes.Contains)));
-            }
-
-            if (f.Maps.Count > 0)
-            {
-                parts.Add(string.Join(", ", f.Maps.Select(Catalog.MapName).OrderBy(m => m)));
-            }
-
-            if (f.Regions.Count > 0)
-            {
-                parts.Add(string.Join(", ", f.Regions.Select(Catalog.RegionName).Distinct().OrderBy(r => r)));
-            }
-
-            if (f.MaxPing > 0)
-            {
-                parts.Add("Ping ≤ " + f.MaxPing + " ms");
-            }
-
-            if (f.OneSidedBots != null)
-            {
-                parts.Add(f.OneSidedBots == "true" ? "Bots on" : "Bots off");
-            }
-
-            if (f.AgeLimit != 0)
-            {
-                parts.Add("Age " + FilterState.AgeLimitText(f.AgeLimit).ToLowerInvariant());
-            }
-
-            FilterSummary.Text = FilterPanel.Visibility == Visibility.Visible ? "" : parts.Count == 0 ? "All servers" : string.Join("  ·  ", parts);
+            ShowFilter(ModeButton, ModeValue, Catalog.Modes.Where(f.Modes.Contains).ToList());
+            ShowFilter(MapButton, MapValue, f.Maps.Select(Catalog.MapName).OrderBy(m => m).ToList());
+            ShowFilter(RegionButton, RegionValue, f.Regions.Select(Catalog.RegionName).Distinct().OrderBy(r => r).ToList());
+            ShowFilter(AgeButton, AgeValue, f.AgeLimit != 0 ? new List<string> { FilterState.AgeLimitText(f.AgeLimit) } : new List<string>());
+            ShowFilter(PingButton, PingValue, f.MaxPing > 0 ? new List<string> { "≤ " + f.MaxPing + " ms" } : new List<string>());
+            ShowFilter(BotButton, BotValue, f.OneSidedBots != null ? new List<string> { f.OneSidedBots == "true" ? "On" : "Off" } : new List<string>());
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
             ResetButton.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
             QueueSave();
         }
 
-        private void OnToggleFilters(object sender, RoutedEventArgs e) => SetFiltersOpen(FilterPanel.Visibility != Visibility.Visible, animate: true);
-
-        private void SetFiltersOpen(bool open, bool animate = false)
+        private static void ShowFilter(Button button, TextBlock value, List<string> selected)
         {
-            if (!animate || !IsLoaded)
-            {
-                FilterPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-            }
-            else if (open)
-            {
-                FilterPanel.Visibility = Visibility.Visible;
-                Motion.ScaleHeight(FilterPanel, 0, 1, 220);
-                Motion.Fade(FilterPanel, 0, 1, 220);
-            }
-            else
-            {
-                Motion.Fade(FilterPanel, 1, 0, 160);
-                Motion.ScaleHeight(FilterPanel, 1, 0, 180, () =>
-                {
-                    FilterPanel.Visibility = Visibility.Collapsed;
-                    Motion.ScaleHeight(FilterPanel, 1, 1, 0);
-                    FilterPanel.Opacity = 1;
-                });
-            }
-
-            FilterChevron.Text = open ? "" : "";
-            FilterToggle.ToolTip = open ? "Hide filters" : "Show filters";
-            UpdateFilterSummary();
+            value.Text = selected.Count == 0 ? "Any" : selected.Count <= 2 ? string.Join(", ", selected) : selected[0] + " +" + (selected.Count - 1);
+            button.Tag = selected.Count > 0 ? "on" : null;
         }
 
+        private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
+
+        private Popup PopupFor(Button button) =>
+            button == ModeButton ? ModePopup : button == MapButton ? MapPopup : button == RegionButton ? RegionPopup
+            : button == AgeButton ? AgePopup : button == PingButton ? PingPopup : BotPopup;
+
+        private void OnFilterButton(object sender, RoutedEventArgs e)
+        {
+            var popup = PopupFor((Button)sender);
+
+            // Clicking the button of an open dropdown closes it (the click itself already dismissed it).
+            if (popupClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            {
+                return;
+            }
+
+            popup.IsOpen = true;
+            if (popup.Child is FrameworkElement panel)
+            {
+                Motion.Fade(panel, 0, 1, 140);
+                Motion.SlideFrom(panel, -6, 160);
+            }
+        }
+
+        private void OnFilterPopupClosed(object sender, EventArgs e) => popupClosedUtc[(Popup)sender] = DateTime.UtcNow;
+
+        private void CloseFilterPopups()
+        {
+            foreach (var p in new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup })
+            {
+                p.IsOpen = false;
+            }
+        }
+
+        private void OnClearCategory(object sender, RoutedEventArgs e)
+        {
+            var f = browser.Filters;
+            var kind = (string)((Button)sender).Tag;
+            switch (kind)
+            {
+                case "mode":
+                    f.Modes.Clear();
+                    break;
+                case "map":
+                    f.Maps.Clear();
+                    break;
+                case "region":
+                    f.Regions.Clear();
+                    break;
+                case "age":
+                    f.AgeLimit = 0;
+                    break;
+                case "ping":
+                    f.MaxPing = 0;
+                    break;
+                case "bot":
+                    f.Bots.Clear();
+                    break;
+            }
+
+            CloseFilterPopups();
+            SyncChips();
+            UpdateFilterSummary();
+            Render();
+            if (kind == "mode" || kind == "map" || kind == "bot")
+            {
+                debounce.Stop();
+                debounce.Start();
+            }
+        }
         private void OnReset(object sender, RoutedEventArgs e) => ResetFilters();
 
         private void ResetFilters()
@@ -1735,7 +1766,12 @@ namespace Dispatch
         {
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            if (e.Key == Key.F5)
+            if (e.Key == Key.Escape && new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup }.Any(p => p.IsOpen))
+            {
+                e.Handled = true;
+                CloseFilterPopups();
+            }
+            else if (e.Key == Key.F5)
             {
                 e.Handled = true;
                 _ = UpdateAsync(true);
@@ -2018,8 +2054,6 @@ namespace Dispatch
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
 
-            // The drawer always starts closed; the bar above the list summarises the active filters.
-            SetFiltersOpen(false);
 
             var width = settings.GetDouble("width", Width);
             var height = settings.GetDouble("height", Height);

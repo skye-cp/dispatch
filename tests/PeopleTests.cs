@@ -97,6 +97,26 @@ namespace Dispatch.Tests
         }
 
         [Fact]
+        public void RefreshKeepsShowingCurrentServersUntilAnswersArrive()
+        {
+            var b = new ServerBrowser();
+            var now = DateTime.UtcNow;
+            foreach (var q in b.Plan())
+            {
+                b.Store(q, new[] { S(q.Key, "o" + q.Key, "x") }, now);
+            }
+
+            Assert.Empty(b.Missing(now));
+            b.Invalidate();
+            Assert.Equal(b.Plan().Count, b.Missing(now).Count);
+            Assert.Equal(b.Plan().Count, b.Pool().Count);
+
+            b.Store(b.Plan()[0], new Server[0], now);
+            Assert.Equal(b.Plan().Count - 1, b.Pool().Count);
+            Assert.Equal(b.Plan().Count - 1, b.Missing(now).Count);
+        }
+
+        [Fact]
         public void FriendRecordsSurviveTheProtocol()
         {
             Assert.True(Protocol.TryDecodeFriend(Protocol.Split(Protocol.EncodeFriend("123", "Some\tName")), out var id, out var name));

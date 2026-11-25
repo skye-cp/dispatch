@@ -50,7 +50,7 @@ namespace Dispatch.Model
 
         /// <summary>Requests of the current plan that have no fresh answer.</summary>
         public List<LobbyQuery> Missing(DateTime nowUtc) =>
-            Plan().Where(q => !cache.TryGetValue(q.Key, out var e) || nowUtc - e.FetchedUtc > MaxAge).ToList();
+            Plan().Where(q => !cache.TryGetValue(q.Key, out var e) || e.Stale || nowUtc - e.FetchedUtc > MaxAge).ToList();
 
         public void Store(LobbyQuery query, IReadOnlyList<Server> servers, DateTime nowUtc)
         {
@@ -83,7 +83,17 @@ namespace Dispatch.Model
         public static uint NewestCounter(IEnumerable<Server> servers) =>
             servers.Select(s => LobbyAge.CounterOf(s.Id)).DefaultIfEmpty(0u).Max();
 
-        public void Invalidate() => cache.Clear();
+        /// <summary>
+        /// Asks for every answer again but keeps showing the current ones until each is replaced, so a
+        /// refresh only changes what actually changed instead of emptying and refilling the list.
+        /// </summary>
+        public void Invalidate()
+        {
+            foreach (var e in cache.Values)
+            {
+                e.Stale = true;
+            }
+        }
 
         /// <summary>Fills in pings measured after the servers were listed.</summary>
         public void ApplyPings(IReadOnlyDictionary<string, int> pings)
@@ -227,6 +237,9 @@ namespace Dispatch.Model
 
             public IReadOnlyList<Server> Servers { get; }
             public DateTime FetchedUtc { get; }
+
+            /// <summary>Marked for a fresh answer; still shown until it arrives.</summary>
+            public bool Stale { get; set; }
         }
     }
 }

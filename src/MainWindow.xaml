@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Dispatch"
-        Title="Dispatch" Width="1180" Height="760" MinWidth="1000" MinHeight="500"
+        Title="Dispatch" Width="1180" Height="760" MinWidth="960" MinHeight="500"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="14"
@@ -48,34 +48,140 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Search, filter toggle, reset, refresh -->
-            <Grid Grid.Row="1" Margin="18,6,18,10">
+            <!-- Search, filter bar, reset, refresh. Each filter opens a small dropdown of chips. -->
+            <Grid Grid.Row="1" Margin="18,6,18,8">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="300" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="260" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Grid>
-                    <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches every server"
+                <Grid VerticalAlignment="Top">
+                    <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches all"
                              TextChanged="OnSearchChanged" PreviewKeyDown="OnSearchKey" Padding="0,0,26,0" />
                     <Button x:Name="ClearSearch" Style="{StaticResource Link}" FontFamily="{StaticResource IconFont}" FontSize="10"
                             Content="&#xE711;" HorizontalAlignment="Right" Margin="0,0,3,0" Visibility="Collapsed"
                             ToolTip="Clear (Esc)" Click="OnClearSearch" />
                 </Grid>
-                <Button x:Name="FilterToggle" Grid.Column="1" Style="{StaticResource Link}" Margin="10,0,0,0" Click="OnToggleFilters">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="FilterChevron" FontFamily="{StaticResource IconFont}" FontSize="10" Text="&#xE70E;"
-                                   VerticalAlignment="Center" Margin="0,1,7,0" />
-                        <TextBlock Text="FILTERS" FontFamily="{StaticResource HeadFont}" />
-                    </StackPanel>
-                </Button>
-                <TextBlock x:Name="FilterSummary" Grid.Column="2" Margin="6,0,12,0" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextDimBrush}" TextTrimming="CharacterEllipsis" FontSize="13" />
-                <Button x:Name="ResetButton" Grid.Column="3" Style="{StaticResource Link}" Content="RESET" Margin="0,0,8,0"
-                        ToolTip="Clear every filter and the search" Click="OnReset" />
-                <StackPanel Grid.Column="4" Orientation="Horizontal">
+                <WrapPanel x:Name="FilterBar" Grid.Column="1" Margin="10,0,4,0">
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="ModeButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Game modes to show">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="MODE" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="ModeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="ModePopup" PlacementTarget="{Binding ElementName=ModeButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="ModeChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="mode" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="MapButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Maps to show">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="MAP" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="MapValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="MapPopup" PlacementTarget="{Binding ElementName=MapButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="MapChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="map" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="RegionButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Steam relay regions to show">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="REGION" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="RegionValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="RegionPopup" PlacementTarget="{Binding ElementName=RegionButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="RegionChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="region" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="AgeButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="How long servers have been up">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="AGE" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="AgeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="AgePopup" PlacementTarget="{Binding ElementName=AgeButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="AgeChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="age" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="PingButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Highest ping to show">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="PING" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="PingValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="PingPopup" PlacementTarget="{Binding ElementName=PingButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="PingChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="ping" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Grid Margin="0,0,6,6">
+                        <Button x:Name="BotButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Servers with or without bots">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="BOT" Style="{StaticResource FilterLabel}" />
+                                <TextBlock x:Name="BotValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                            </StackPanel>
+                        </Button>
+                        <Popup x:Name="BotPopup" PlacementTarget="{Binding ElementName=BotButton}" Placement="Bottom" VerticalOffset="6"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                            <Border Style="{StaticResource Flyout}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="BotChips" MaxWidth="470" />
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="bot" HorizontalAlignment="Right"
+                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </WrapPanel>
+                <Button x:Name="ResetButton" Grid.Column="2" Style="{StaticResource Link}" Content="RESET" Margin="0,2,8,0"
+                        VerticalAlignment="Top" ToolTip="Clear every filter and the search" Click="OnReset" />
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top">
                     <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0,0,8,0" Padding="10,5,10,6" Content="AUTO"
                                   ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
                                   Checked="OnAutoChanged" Unchecked="OnAutoChanged" />
@@ -83,45 +189,6 @@
                             ToolTip="Refresh from Steam (F5)" Click="OnRefresh" />
                 </StackPanel>
             </Grid>
-
-            <!-- Filters -->
-            <Border x:Name="FilterPanel" Grid.Row="2" Margin="18,0,18,10" Padding="14,12,8,6"
-                    Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="2">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="64" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Style="{StaticResource Label}" Text="MODE" />
-                    <WrapPanel x:Name="ModeChips" Grid.Column="1" />
-                    <TextBlock Style="{StaticResource Label}" Grid.Row="1" Text="MAP" />
-                    <WrapPanel x:Name="MapChips" Grid.Row="1" Grid.Column="1" />
-                    <TextBlock Style="{StaticResource Label}" Grid.Row="2" Text="REGION" />
-                    <WrapPanel x:Name="RegionChips" Grid.Row="2" Grid.Column="1" />
-                    <TextBlock Style="{StaticResource Label}" Grid.Row="3" Text="PING" />
-                    <Grid Grid.Row="3" Grid.Column="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <WrapPanel x:Name="PingChips" />
-                        <TextBlock Grid.Column="1" Style="{StaticResource Label}" Text="BOTS" Margin="28,5,12,0" />
-                        <WrapPanel x:Name="BotChips" Grid.Column="2" />
-                        <TextBlock Grid.Column="3" Style="{StaticResource Label}" Text="AGE" Margin="28,5,12,0" />
-                        <WrapPanel x:Name="AgeChips" Grid.Column="4" />
-                    </Grid>
-                </Grid>
-            </Border>
-
             <!-- Column header: the game's red bar -->
             <Grid Grid.Row="3" Margin="18,0,18,6">
                 <Border Background="{StaticResource RedBrush}" CornerRadius="2" Height="34">
@@ -129,13 +196,13 @@
                     <Grid x:Name="HeaderGrid" Margin="1,0,1,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
+                            <ColumnDefinition Width="70" />
+                            <ColumnDefinition Width="134" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="54" />
+                            <ColumnDefinition Width="124" />
+                            <ColumnDefinition Width="72" />
                             <ColumnDefinition Width="76" />
-                            <ColumnDefinition Width="146" />
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="66" />
-                            <ColumnDefinition Width="140" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="84" />
                         </Grid.ColumnDefinitions>
                         <Button x:Name="HeadName" Style="{StaticResource HeaderCell}" Tag="Name" Click="OnSort" />
                         <Button x:Name="HeadSlots" Grid.Column="1" Style="{StaticResource HeaderCell}" Tag="Slots" Click="OnSort"
@@ -180,23 +247,24 @@
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="200" />
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="134" />
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="54" />
+                                    <ColumnDefinition Width="124" />
+                                    <ColumnDefinition Width="72" />
                                     <ColumnDefinition Width="76" />
-                                    <ColumnDefinition Width="146" />
-                                    <ColumnDefinition Width="160" />
-                                    <ColumnDefinition Width="66" />
-                                    <ColumnDefinition Width="140" />
-                                    <ColumnDefinition Width="80" />
-                                    <ColumnDefinition Width="84" />
                                 </Grid.ColumnDefinitions>
                                 <Rectangle x:Name="NewMark" Width="3" HorizontalAlignment="Left" Margin="-1,-1,0,-1"
                                            Fill="{StaticResource RedBrush}" Visibility="Collapsed" ToolTip="New since the list first loaded" />
-                                <Grid Margin="8,0,12,0">
+                                <!-- Left-aligned with a star column: badges follow the name, and only the name shrinks when space runs out. -->
+                                <Grid Margin="8,0,12,0" HorizontalAlignment="Left">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock x:Name="Star" RenderTransformOrigin="0.5,0.5" Text="&#xE734;" FontFamily="{StaticResource IconFont}" FontSize="13" Width="16"
                                                VerticalAlignment="Center" Margin="0,1,6,0" Foreground="{StaticResource TextFaintBrush}"

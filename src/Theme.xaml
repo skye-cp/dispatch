@@ -390,6 +390,71 @@
         </Setter>
     </Style>
 
+    <!-- Filter bar: one button per category showing its selection; red outline when a filter is active. -->
+    <Style x:Key="FilterButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="10,0,10,1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1" CornerRadius="2" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="False" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource TextDimBrush}" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="on">
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource RedBrush}" />
+                            <Setter TargetName="b" Property="Background" Value="#241312" />
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="on" />
+                                <Condition Property="IsMouseOver" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource RedHotBrush}" />
+                        </MultiTrigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="FilterLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource HeadFont}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
+        <Setter Property="Margin" Value="0,1,8,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- The dropdown under a filter button. -->
+    <Style x:Key="Flyout" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="Padding" Value="12,12,8,6" />
+        <Setter Property="Margin" Value="0,0,14,14" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.55" Color="Black" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- A list value that filters by itself when clicked: hand cursor and underline on hover. -->
     <Style x:Key="CellLink" TargetType="TextBlock">
         <Setter Property="Cursor" Value="Hand" />
