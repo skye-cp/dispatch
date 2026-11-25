@@ -28,11 +28,6 @@ namespace Dispatch
         private const int ClipboardUpdateMessage = 0x031D;
         private static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan MessageFor = TimeSpan.FromSeconds(6);
-        private static readonly int[] PingLimits = FilterState.PingLimits;
-        private static readonly string[] FilterKinds = { "mode", "map", "bots", "region", "age", "ping" };
-
-        /// <summary>Mode, map and bots are Steam search filters, so changing them can need new searches; the rest filter on screen.</summary>
-        private static bool NeedsLookup(string kind) => kind == "mode" || kind == "map" || kind == "bots";
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
@@ -1297,52 +1292,47 @@ namespace Dispatch
 
         // ---------- filters ----------
 
+        /// <summary>Each filter category's button, value text, dropdown and chip panel.</summary>
+        private Dictionary<FilterKind, (Button Button, TextBlock Value, Popup Popup, Panel Chips)> filterParts;
+
         private void BuildChips()
         {
+            filterParts = new Dictionary<FilterKind, (Button, TextBlock, Popup, Panel)>
+            {
+                [FilterKind.Mode] = (ModeButton, ModeValue, ModePopup, ModeChips),
+                [FilterKind.Map] = (MapButton, MapValue, MapPopup, MapChips),
+                [FilterKind.Region] = (RegionButton, RegionValue, RegionPopup, RegionChips),
+                [FilterKind.Age] = (AgeButton, AgeValue, AgePopup, AgeChips),
+                [FilterKind.Ping] = (PingButton, PingValue, PingPopup, PingChips),
+                [FilterKind.Bots] = (BotButton, BotValue, BotPopup, BotChips),
+            };
+
+            var f = browser.Filters;
             foreach (var mode in Catalog.Modes)
             {
-                ModeChips.Children.Add(MakeChip(mode, mode, browser.Filters.Modes, ModeTip(mode)));
+                ModeChips.Children.Add(MakeChip(mode, mode, f.Modes.Contains(mode), ModeTip(mode), on => OnSetChip(f.Modes, mode, on)));
             }
 
-            foreach (var map in Catalog.Maps.Concat(browser.Filters.Maps.Where(m => !Catalog.Maps.Contains(m))))
+            foreach (var map in Catalog.Maps.Concat(f.Maps.Where(m => !Catalog.Maps.Contains(m, StringComparer.OrdinalIgnoreCase))))
             {
-                MapChips.Children.Add(MakeChip(Catalog.MapName(map), map, browser.Filters.Maps, null));
+                MapChips.Children.Add(MakeChip(Catalog.MapName(map), map, f.Maps.Contains(map), null, on => OnSetChip(f.Maps, map, on)));
             }
 
-            foreach (var limit in PingLimits)
+            foreach (var limit in FilterState.PingLimits)
             {
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = "≤ " + limit + " ms",
-                    Tag = limit,
-                    IsChecked = browser.Filters.MaxPing == limit,
-                    ToolTip = "Hide servers with a higher ping",
-                };
-                chip.Checked += (s, e) => OnPingChip(limit, true);
-                chip.Unchecked += (s, e) => OnPingChip(limit, false);
-                PingChips.Children.Add(chip);
+                PingChips.Children.Add(MakeChip(FilterState.PingLimitText(limit), limit, f.MaxPing == limit, "Hide servers with a higher ping",
+                    on => OnSingleChip(FilterKind.Ping, limit, on)));
             }
 
-            BotChips.Children.Add(MakeChip("On", "true", browser.Filters.Bots, "Servers that fill empty slots with bots"));
-            BotChips.Children.Add(MakeChip("Off", "false", browser.Filters.Bots, "Servers without bots"));
+            BotChips.Children.Add(MakeChip("On", "true", f.Bots.Contains("true"), "Servers that fill empty slots with bots", on => OnSetChip(f.Bots, "true", on)));
+            BotChips.Children.Add(MakeChip("Off", "false", f.Bots.Contains("false"), "Servers without bots", on => OnSetChip(f.Bots, "false", on)));
 
             foreach (var limit in FilterState.AgeLimits)
             {
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = FilterState.AgeLimitText(limit),
-                    Tag = limit,
-                    IsChecked = browser.Filters.AgeLimit == limit,
-                    ToolTip = limit > 0 ? "Servers created recently, likely still filling up" : "Long-running servers, likely with a settled crowd",
-                };
-                chip.Checked += (s, e) => OnAgeChip(limit, true);
-                chip.Unchecked += (s, e) => OnAgeChip(limit, false);
-                AgeChips.Children.Add(chip);
+                var tip = limit > 0 ? "Servers created recently, likely still filling up" : "Long-running servers, likely with a settled crowd";
+                AgeChips.Children.Add(MakeChip(FilterState.AgeLimitText(limit), limit, f.AgeLimit == limit, tip, on => OnSingleChip(FilterKind.Age, limit, on)));
             }
         }
-
         private static string ModeTip(string mode)
         {
             switch (mode)
@@ -1358,26 +1348,29 @@ namespace Dispatch
             }
         }
 
-        private ToggleButton MakeChip(object content, string value, HashSet<string> set, string tip)
+        private ToggleButton MakeChip(object content, object tag, bool isChecked, string tip, Action<bool> onToggle)
         {
-            var chip = new ToggleButton { Style = (Style)FindResource("Chip"), Content = content, Tag = value, IsChecked = set.Contains(value) };
-            if (tip != null)
+            var chip = new ToggleButton { Style = (Style)FindResource("Chip"), Content = content, Tag = tag, IsChecked = isChecked, ToolTip = tip };
+            chip.Checked += (s, e) =>
             {
-                chip.ToolTip = tip;
-            }
-
-            chip.Checked += (s, e) => OnChip(set, value, true);
-            chip.Unchecked += (s, e) => OnChip(set, value, false);
+                if (!quiet)
+                {
+                    onToggle(true);
+                }
+            };
+            chip.Unchecked += (s, e) =>
+            {
+                if (!quiet)
+                {
+                    onToggle(false);
+                }
+            };
             return chip;
         }
 
-        private void OnChip(HashSet<string> set, string value, bool on)
+        /// <summary>A mode, map or bots chip: these are Steam search filters, so new searches may follow.</summary>
+        private void OnSetChip(HashSet<string> set, string value, bool on)
         {
-            if (quiet)
-            {
-                return;
-            }
-
             if (on)
             {
                 set.Add(value);
@@ -1389,19 +1382,11 @@ namespace Dispatch
 
             UpdateFilterSummary();
             Render();
-
-            // Mode, map and bots can need new Steam searches; wait for clicks to settle.
-            debounce.Stop();
-            debounce.Start();
+            QueueLookup();
         }
 
         private void OnRegionChip(IEnumerable<string> codes, bool on)
         {
-            if (quiet)
-            {
-                return;
-            }
-
             foreach (var code in codes)
             {
                 if (on)
@@ -1418,17 +1403,21 @@ namespace Dispatch
             Render();
         }
 
-        private void OnAgeChip(int limit, bool on)
+        /// <summary>Age and ping take one value: picking one replaces the other and closes the dropdown.</summary>
+        private void OnSingleChip(FilterKind kind, int limit, bool on)
         {
-            if (quiet)
+            if (kind == FilterKind.Ping)
             {
-                return;
+                browser.Filters.MaxPing = on ? limit : 0;
+            }
+            else
+            {
+                browser.Filters.AgeLimit = on ? limit : 0;
             }
 
-            browser.Filters.AgeLimit = on ? limit : 0;
             if (on)
             {
-                AgePopup.IsOpen = false;
+                filterParts[kind].Popup.IsOpen = false;
             }
 
             SyncChips();
@@ -1436,30 +1425,12 @@ namespace Dispatch
             Render();
         }
 
-        private void OnPingChip(int limit, bool on)
+        /// <summary>Mode, map and bots changes can need new Steam searches; this waits for clicks to settle first.</summary>
+        private void QueueLookup()
         {
-            if (quiet)
-            {
-                return;
-            }
-
-            quiet = true;
-            foreach (var chip in PingChips.Children.OfType<ToggleButton>())
-            {
-                chip.IsChecked = on && (int)chip.Tag == limit;
-            }
-
-            quiet = false;
-            browser.Filters.MaxPing = on ? limit : 0;
-            if (on)
-            {
-                PingPopup.IsOpen = false;
-            }
-
-            UpdateFilterSummary();
-            Render();
+            debounce.Stop();
+            debounce.Start();
         }
-
         private void UpdateRegionChips()
         {
             var regions = browser.Regions();
@@ -1500,17 +1471,7 @@ namespace Dispatch
                 var content = new StackPanel { Orientation = Orientation.Horizontal };
                 content.Children.Add(new TextBlock { Text = city.Key });
                 content.Children.Add(new TextBlock { Text = count, Margin = new Thickness(7, 0, 0, 0), Opacity = 0.6 });
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = content,
-                    Tag = members,
-                    IsChecked = members.Any(browser.Filters.Regions.Contains),
-                    ToolTip = tip,
-                };
-                chip.Checked += (s, e) => OnRegionChip(members, true);
-                chip.Unchecked += (s, e) => OnRegionChip(members, false);
-                RegionChips.Children.Add(chip);
+                RegionChips.Children.Add(MakeChip(content, members, members.Any(browser.Filters.Regions.Contains), tip, on => OnRegionChip(members, on)));
             }
 
             if (codes.Count == 0)
@@ -1530,12 +1491,13 @@ namespace Dispatch
         private void UpdateFilterSummary()
         {
             var f = browser.Filters;
-            ShowFilter(ModeButton, ModeValue, Catalog.Modes.Where(f.Modes.Contains).ToList());
-            ShowFilter(MapButton, MapValue, f.Maps.Select(Catalog.MapName).OrderBy(m => m).ToList());
-            ShowFilter(RegionButton, RegionValue, f.Regions.Select(Catalog.RegionName).Distinct().OrderBy(r => r).ToList());
-            ShowFilter(AgeButton, AgeValue, f.AgeLimit != 0 ? new List<string> { FilterState.AgeLimitText(f.AgeLimit) } : new List<string>());
-            ShowFilter(PingButton, PingValue, f.MaxPing > 0 ? new List<string> { "≤ " + f.MaxPing + " ms" } : new List<string>());
-            ShowFilter(BotButton, BotValue, f.OneSidedBots != null ? new List<string> { f.OneSidedBots == "true" ? "On" : "Off" } : new List<string>());
+            foreach (var part in filterParts)
+            {
+                var selected = f.Selected(part.Key);
+                part.Value.Value.Text = FilterState.Summary(selected);
+                part.Value.Button.Tag = selected.Count > 0 ? "on" : null;
+            }
+
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
             ShowReset(active > 0);
             QueueSave();
@@ -1566,17 +1528,12 @@ namespace Dispatch
             }
         }
 
-        private static void ShowFilter(Button button, TextBlock value, List<string> selected)
-        {
-            value.Text = selected.Count == 0 ? "Any" : selected.Count <= 2 ? string.Join(", ", selected) : selected[0] + " +" + (selected.Count - 1);
-            button.Tag = selected.Count > 0 ? "on" : null;
-        }
 
         private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
 
-        private Popup PopupFor(Button button) =>
-            button == ModeButton ? ModePopup : button == MapButton ? MapPopup : button == RegionButton ? RegionPopup
-            : button == AgeButton ? AgePopup : button == PingButton ? PingPopup : BotPopup;
+        private Popup PopupFor(Button button) => filterParts.Values.First(p => p.Button == button).Popup;
+
+        private bool AnyFilterPopupOpen => filterParts.Values.Any(p => p.Popup.IsOpen);
 
         private void OnFilterButton(object sender, RoutedEventArgs e)
         {
@@ -1600,46 +1557,27 @@ namespace Dispatch
 
         private void CloseFilterPopups()
         {
-            foreach (var p in new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup })
+            foreach (var p in filterParts.Values)
             {
-                p.IsOpen = false;
+                p.Popup.IsOpen = false;
             }
         }
 
         private void OnClearCategory(object sender, RoutedEventArgs e)
         {
-            var f = browser.Filters;
-            var kind = (string)((Button)sender).Tag;
-            switch (kind)
+            if (!FilterState.TryKind(((Button)sender).Tag, out var kind))
             {
-                case "mode":
-                    f.Modes.Clear();
-                    break;
-                case "map":
-                    f.Maps.Clear();
-                    break;
-                case "region":
-                    f.Regions.Clear();
-                    break;
-                case "age":
-                    f.AgeLimit = 0;
-                    break;
-                case "ping":
-                    f.MaxPing = 0;
-                    break;
-                case "bots":
-                    f.Bots.Clear();
-                    break;
+                return;
             }
 
+            browser.Filters.Clear(kind);
             CloseFilterPopups();
             SyncChips();
             UpdateFilterSummary();
             Render();
-            if (NeedsLookup(kind))
+            if (FilterState.NeedsLookup(kind))
             {
-                debounce.Stop();
-                debounce.Start();
+                QueueLookup();
             }
         }
         private void OnReset(object sender, RoutedEventArgs e) => ResetFilters();
@@ -1647,9 +1585,9 @@ namespace Dispatch
         private void ResetFilters()
         {
             quiet = true;
-            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, PingChips, BotChips, AgeChips })
+            foreach (var part in filterParts.Values)
             {
-                foreach (var chip in panel.Children.OfType<ToggleButton>())
+                foreach (var chip in part.Chips.Children.OfType<ToggleButton>())
                 {
                     chip.IsChecked = false;
                 }
@@ -1843,7 +1781,7 @@ namespace Dispatch
         {
             while (d != null && !(d is ListBoxItem))
             {
-                if (d is FrameworkElement fe && fe.Tag is string kind && (FilterKinds.Contains(kind) || kind == "star"))
+                if (d is FrameworkElement fe && (FilterState.TryKind(fe.Tag, out _) || "star".Equals(fe.Tag)))
                 {
                     return fe;
                 }
@@ -1856,142 +1794,42 @@ namespace Dispatch
 
         private void OnCellClick(object sender, MouseButtonEventArgs e)
         {
-            if (sender is FrameworkElement cell && cell.DataContext is Server s)
+            if (sender is FrameworkElement cell && cell.DataContext is Server s && FilterState.TryKind(cell.Tag, out var kind))
             {
-                ToggleFilter((string)cell.Tag, s);
+                ToggleFilter(kind, s);
             }
         }
 
         private void OnCellTip(object sender, ToolTipEventArgs e)
         {
-            if (!(sender is FrameworkElement cell) || !(cell.DataContext is Server s) || FilterLabel((string)cell.Tag, s) == null)
+            if (!(sender is FrameworkElement cell) || !(cell.DataContext is Server s) ||
+                !FilterState.TryKind(cell.Tag, out var kind) || FilterState.Label(kind, s) == null)
             {
                 e.Handled = true;
                 return;
             }
 
-            cell.ToolTip = FilterAction((string)cell.Tag, s);
+            cell.ToolTip = browser.Filters.ActionText(kind, s);
         }
 
-        /// <summary>What a click on this value filters by, or null when it can't filter.</summary>
-        private static string FilterLabel(string kind, Server s)
+        private void ToggleFilter(FilterKind kind, Server s)
         {
-            switch (kind)
-            {
-                case "mode":
-                    return s.Mode.Length > 0 ? s.Mode : null;
-                case "map":
-                    return s.Map.Length > 0 ? s.MapName : null;
-                case "bots":
-                    return s.Bots == "true" ? "bots on" : s.Bots == "false" ? "bots off" : null;
-                case "region":
-                    return s.Region.Length > 0 ? s.RegionName : null;
-                case "age":
-                    var age = FilterState.AgeLimitFor(s.AgeMinutes);
-                    return age != 0 ? "age " + FilterState.AgeLimitText(age).ToLowerInvariant() : null;
-                case "ping":
-                    var limit = FilterState.LimitFor(s.Ping);
-                    return limit > 0 ? "ping ≤ " + limit + " ms" : null;
-                default:
-                    return null;
-            }
-        }
-
-        private bool IsFilterActive(string kind, Server s)
-        {
-            var f = browser.Filters;
-            switch (kind)
-            {
-                case "mode":
-                    return f.Modes.Contains(s.Mode);
-                case "map":
-                    return f.Maps.Contains(s.Map);
-                case "bots":
-                    return f.OneSidedBots == s.Bots;
-                case "region":
-                    return f.Regions.Contains(s.Region);
-                case "age":
-                    return f.AgeLimit != 0 && f.AgeLimit == FilterState.AgeLimitFor(s.AgeMinutes);
-                case "ping":
-                    return f.MaxPing > 0 && f.MaxPing == FilterState.LimitFor(s.Ping);
-                default:
-                    return false;
-            }
-        }
-
-        private string FilterAction(string kind, Server s)
-        {
-            var label = FilterLabel(kind, s);
-            return IsFilterActive(kind, s) ? "Remove the " + label + " filter" : "Filter by " + label;
-        }
-
-        private void ToggleFilter(string kind, Server s)
-        {
-            var label = FilterLabel(kind, s);
+            var label = FilterState.Label(kind, s);
             if (label == null)
             {
                 return;
             }
 
-            var f = browser.Filters;
-            var removing = IsFilterActive(kind, s);
-            switch (kind)
-            {
-                case "mode":
-                    Toggle(f.Modes, s.Mode, removing);
-                    break;
-                case "map":
-                    Toggle(f.Maps, s.Map, removing);
-                    break;
-                case "bots":
-                    f.Bots.Clear();
-                    if (!removing)
-                    {
-                        f.Bots.Add(s.Bots);
-                    }
-
-                    break;
-                case "region":
-                    // One city can have several relays (sto, sto2): toggle them together, like the chip.
-                    var codes = browser.Regions().Select(r => r.Code).Append(s.Region)
-                        .Where(c => Catalog.RegionName(c) == s.RegionName).Distinct(StringComparer.OrdinalIgnoreCase);
-                    foreach (var code in codes)
-                    {
-                        Toggle(f.Regions, code, removing);
-                    }
-
-                    break;
-                case "age":
-                    f.AgeLimit = removing ? 0 : FilterState.AgeLimitFor(s.AgeMinutes);
-                    break;
-                case "ping":
-                    f.MaxPing = removing ? 0 : FilterState.LimitFor(s.Ping);
-                    break;
-            }
-
+            var removing = browser.Filters.Toggle(kind, s, browser.Regions().Select(r => r.Code));
             SyncChips();
             UpdateFilterSummary();
             Render();
             Say(removing ? "Removed the " + label + " filter." : "Filtering by " + label + ". Click it again, or Reset, to undo.");
-            if (NeedsLookup(kind))
+            if (FilterState.NeedsLookup(kind))
             {
-                debounce.Stop();
-                debounce.Start();
+                QueueLookup();
             }
         }
-
-        private static void Toggle(HashSet<string> set, string value, bool remove)
-        {
-            if (remove)
-            {
-                set.Remove(value);
-            }
-            else
-            {
-                set.Add(value);
-            }
-        }
-
         /// <summary>Makes every chip show the current filters after a change made elsewhere.</summary>
         private void SyncChips()
         {
@@ -2048,14 +1886,14 @@ namespace Dispatch
 
             var separator = new Separator { Tag = "filter" };
             RowMenu.Items.Add(separator);
-            foreach (var kind in FilterKinds)
+            foreach (var kind in FilterState.Kinds)
             {
-                if (FilterLabel(kind, s) == null)
+                if (FilterState.Label(kind, s) == null)
                 {
                     continue;
                 }
 
-                var item = new MenuItem { Header = FilterAction(kind, s), Tag = "filter" };
+                var item = new MenuItem { Header = browser.Filters.ActionText(kind, s), Tag = "filter" };
                 var k = kind;
                 item.Click += (o, a) => ToggleFilter(k, s);
                 RowMenu.Items.Add(item);
@@ -2387,7 +2225,7 @@ namespace Dispatch
         {
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            if (e.Key == Key.Escape && (new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup }.Any(p => p.IsOpen) || menus.Values.Any(p => p.IsOpen)))
+            if (e.Key == Key.Escape && (AnyFilterPopupOpen || menus.Values.Any(p => p.IsOpen)))
             {
                 e.Handled = true;
                 CloseFilterPopups();
