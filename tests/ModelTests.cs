@@ -151,6 +151,16 @@ namespace Dispatch.Tests
             Assert.Equal(0, f.MaxPing);
         }
 
+        [Theory]
+        [InlineData(23, 50)]
+        [InlineData(50, 50)]
+        [InlineData(51, 100)]
+        [InlineData(150, 150)]
+        [InlineData(151, 0)]
+        [InlineData(-1, 0)]
+        public void ClickedPingMapsToTheSmallestLimitThatKeepsIt(int ping, int limit) =>
+            Assert.Equal(limit, FilterState.LimitFor(ping));
+
         [Fact]
         public void DemoDataHonoursQueriesAndUsesNoRealIds()
         {
