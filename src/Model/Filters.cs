@@ -113,6 +113,7 @@ namespace Dispatch.Model
     /// </summary>
     internal static class QueryPlanner
     {
+        /// <summary>Cap on per-map requests: each takes about a third of a second, so a full plan stays well inside the lookup timeout.</summary>
         public const int MaxQueries = 30;
 
         public static List<LobbyQuery> Plan(FilterState f)
@@ -123,10 +124,10 @@ namespace Dispatch.Model
             }
 
             var modes = f.Modes.Count > 0
-                ? Catalog.Modes.Where(f.Modes.Contains).Concat(f.Modes.Where(m => !Catalog.Modes.Contains(m))).ToList()
+                ? Catalog.Modes.Where(f.Modes.Contains).Concat(f.Modes.Where(m => !Catalog.Modes.Contains(m, StringComparer.OrdinalIgnoreCase))).ToList()
                 : Catalog.DefaultModes.ToList();
             var maps = Catalog.Maps.Where(f.Maps.Contains)
-                .Concat(f.Maps.Where(m => !Catalog.Maps.Contains(m)).OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
+                .Concat(f.Maps.Where(m => !Catalog.Maps.Contains(m, StringComparer.OrdinalIgnoreCase)).OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
                 .ToList();
             var bots = f.OneSidedBots;
             var perMap = maps.Count > 0 && modes.Count * maps.Count <= MaxQueries;

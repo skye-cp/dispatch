@@ -24,6 +24,9 @@ namespace Dispatch.Steam
         public static readonly TimeSpan LocationMaxAge = TimeSpan.FromHours(2);
 
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+
+        // One lookup process at a time: each one signs in to Steam as the game, and the shared state below is per run.
+        private readonly SemaphoreSlim gate = new SemaphoreSlim(1, 1);
         private string steamApi;
 
         /// <summary>The player's position on Steam's relay network, as Steam's own text form. Local only.</summary>
@@ -36,15 +39,25 @@ namespace Dispatch.Steam
         /// <summary>The player's Steam friends (SteamID → name) from the latest lookup. Memory only.</summary>
         public IReadOnlyDictionary<string, string> Friends { get; private set; } = new Dictionary<string, string>();
 
-        /// <summary>Highest lobby counter from the latest age sample, or 0. See <see cref="LobbyAge"/>.</summary>
+        /// <summary>Highest lobby counter from the latest run's age sample, or 0 when that run took none. See <see cref="LobbyAge"/>.</summary>
         public uint NewestCounter { get; private set; }
 
         /// <param name="onAnswer">Called on a worker thread with each request's index and servers.</param>
         /// <param name="onPings">Called on a worker thread with pings measured after the servers were listed.</param>
         /// <param name="sampleAge">Also take one unfiltered sample of the newest servers, for age estimates.</param>
-        public Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
-            Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge = false) =>
-            Task.Run(() => Run(queries, onAnswer, onPings, token, sampleAge), token);
+        public async Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
+            Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge = false)
+        {
+            await gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await Task.Run(() => Run(queries, onAnswer, onPings, token, sampleAge), token).ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
 
         public async Task<List<Server>> FetchAsync(LobbyQuery query, CancellationToken token)
         {
@@ -56,6 +69,7 @@ namespace Dispatch.Steam
         private void Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
             Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge)
         {
+            NewestCounter = 0;
             if (steamApi == null)
             {
                 steamApi = GameLocator.PrepareSteamApi();
@@ -86,108 +100,138 @@ namespace Dispatch.Steam
                     throw new LookupException("Could not start the Steam lookup: " + e.Message);
                 }
 
+                var timedOut = false;
                 using (token.Register(() => Kill(process)))
-                using (var timer = new Timer(_ => Kill(process), null, Timeout, System.Threading.Timeout.InfiniteTimeSpan))
+                using (var timer = new Timer(_ =>
                 {
-                    var stdin = new System.IO.StreamWriter(process.StandardInput.BaseStream, new UTF8Encoding(false)) { NewLine = "\n" };
-                    if (LocationFresh)
+                    timedOut = true;
+                    Kill(process);
+                }, null, Timeout, System.Threading.Timeout.InfiniteTimeSpan))
+                    try
                     {
-                        stdin.WriteLine(Protocol.EncodeLocationHeader(Location));
-                    }
-
-                    if (sampleAge)
-                    {
-                        stdin.WriteLine(Protocol.AgeSampleHeader);
-                    }
-
-                    foreach (var q in queries)
-                    {
-                        stdin.WriteLine(Protocol.EncodeQuery(q));
-                    }
-
-                    stdin.Close();
-                    process.StandardError.ReadToEndAsync();
-
-                    var pending = new List<Server>();
-                    var pings = new Dictionary<string, int>();
-                    var friends = new Dictionary<string, string>();
-                    string error = null;
-                    var answered = 0;
-                    string line;
-                    while ((line = process.StandardOutput.ReadLine()) != null)
-                    {
-                        var f = Protocol.Split(line);
-                        switch (f[0])
+                        try
                         {
-                            case Protocol.ServerRecord:
-                                var s = Protocol.DecodeServer(f, pending.Count, DateTime.UtcNow);
-                                if (s != null)
-                                {
-                                    pending.Add(s);
-                                }
+                            var stdin = new System.IO.StreamWriter(process.StandardInput.BaseStream, new UTF8Encoding(false)) { NewLine = "\n" };
+                            if (LocationFresh)
+                            {
+                                stdin.WriteLine(Protocol.EncodeLocationHeader(Location));
+                            }
 
-                                break;
-                            case Protocol.DoneRecord:
-                                answered++;
-                                onAnswer(Index(f), pending);
-                                pending = new List<Server>();
-                                break;
-                            case Protocol.FailedRecord:
-                                pending = new List<Server>();
-                                break;
-                            case Protocol.ErrorRecord:
-                                error = f.Length > 2 ? f[2] : "Steam lookup failed.";
-                                break;
-                            case Protocol.LocationRecord:
-                                if (f.Length > 1 && f[1].Length > 0)
-                                {
-                                    Location = f[1];
-                                    LocationUtc = DateTime.UtcNow;
-                                }
+                            if (sampleAge)
+                            {
+                                stdin.WriteLine(Protocol.AgeSampleHeader);
+                            }
 
-                                break;
-                            case Protocol.AnchorRecord:
-                                NewestCounter = Protocol.DecodeAnchor(f);
-                                break;
-                            case Protocol.FriendRecord:
-                                if (Protocol.TryDecodeFriend(f, out var friendId, out var friendName))
-                                {
-                                    friends[friendId] = friendName;
-                                }
+                            foreach (var q in queries)
+                            {
+                                stdin.WriteLine(Protocol.EncodeQuery(q));
+                            }
 
-                                break;
-                            case Protocol.PingRecord:
-                                if (Protocol.TryDecodePing(f, out var lobby, out var ms))
-                                {
-                                    pings[lobby] = ms;
-                                }
+                            stdin.Close();
+                        }
+                        catch (System.IO.IOException)
+                        {
+                            // The lookup process ended before reading its requests; its output (or silence) says why.
+                        }
 
-                                break;
+                        var stderr = process.StandardError.ReadToEndAsync();
+
+                        var pending = new List<Server>();
+                        var pings = new Dictionary<string, int>();
+                        var friends = new Dictionary<string, string>();
+                        string error = null;
+                        var answered = 0;
+                        string line;
+                        while ((line = process.StandardOutput.ReadLine()) != null)
+                        {
+                            var f = Protocol.Split(line);
+                            switch (f[0])
+                            {
+                                case Protocol.ServerRecord:
+                                    var s = Protocol.DecodeServer(f, pending.Count, DateTime.UtcNow);
+                                    if (s != null)
+                                    {
+                                        pending.Add(s);
+                                    }
+
+                                    break;
+                                case Protocol.DoneRecord:
+                                    answered++;
+                                    onAnswer(Index(f), pending);
+                                    pending = new List<Server>();
+                                    break;
+                                case Protocol.FailedRecord:
+                                    pending = new List<Server>();
+                                    break;
+                                case Protocol.ErrorRecord:
+                                    error = f.Length > 2 ? f[2] : "Steam lookup failed.";
+                                    break;
+                                case Protocol.LocationRecord:
+                                    if (f.Length > 1 && f[1].Length > 0)
+                                    {
+                                        Location = f[1];
+                                        LocationUtc = DateTime.UtcNow;
+                                    }
+
+                                    break;
+                                case Protocol.AnchorRecord:
+                                    NewestCounter = Protocol.DecodeAnchor(f);
+                                    break;
+                                case Protocol.FriendRecord:
+                                    if (Protocol.TryDecodeFriend(f, out var friendId, out var friendName))
+                                    {
+                                        friends[friendId] = friendName;
+                                    }
+
+                                    break;
+                                case Protocol.PingRecord:
+                                    if (Protocol.TryDecodePing(f, out var lobby, out var ms))
+                                    {
+                                        pings[lobby] = ms;
+                                    }
+
+                                    break;
+                            }
+                        }
+
+                        if (friends.Count > 0)
+                        {
+                            Friends = friends;
+                        }
+
+                        if (pings.Count > 0)
+                        {
+                            onPings?.Invoke(pings);
+                        }
+
+                        process.WaitForExit();
+                        token.ThrowIfCancellationRequested();
+                        if (error != null)
+                        {
+                            throw new LookupException(error);
+                        }
+
+                        if (timedOut)
+                        {
+                            throw new LookupException("Steam took too long to answer, so the list may be incomplete. Try again in a moment.");
+                        }
+
+                        if (answered == 0 && queries.Count > 0)
+                        {
+                            var detail = stderr.Wait(500) ? stderr.Result.Trim() : "";
+                            throw new LookupException("Steam did not answer. Check that Steam is running and online." +
+                                (detail.Length > 0 ? " (" + detail.Split('\n')[0].Trim() + ")" : ""));
                         }
                     }
-
-                    if (friends.Count > 0)
+                    catch (System.IO.IOException e)
                     {
-                        Friends = friends;
+                        throw new LookupException("The Steam lookup stopped unexpectedly: " + e.Message);
                     }
-
-                    if (pings.Count > 0)
+                    finally
                     {
-                        onPings?.Invoke(pings);
+                        // Whatever happened, the lookup process does not outlive the request.
+                        Kill(process);
                     }
-
-                    process.WaitForExit();
-                    token.ThrowIfCancellationRequested();
-                    if (error != null)
-                    {
-                        throw new LookupException(error);
-                    }
-
-                    if (answered == 0 && queries.Count > 0)
-                    {
-                        throw new LookupException("Steam did not answer. Check that Steam is running and online.");
-                    }
-                }
             }
         }
 

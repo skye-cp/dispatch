@@ -12,12 +12,12 @@
 
 [![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-d8433b?style=for-the-badge)](https://github.com/skye-cp/dispatch/releases/latest/download/Dispatch.exe)
 
-<sub>One portable file, under 150 KB · <a href="https://github.com/skye-cp/dispatch/releases">All releases</a></sub>
+<sub>One small portable file · <a href="https://github.com/skye-cp/dispatch/releases">All releases</a></sub>
 
 <br>
 <br>
 
-<img src=".github/assets/screenshot.png" width="860" alt="Dispatch listing Bodycam servers sorted by ping, with mode, map, region, ping and bot filters">
+<img src=".github/assets/screenshot.png" width="860" alt="Dispatch listing Bodycam servers sorted by ping, with a browser-style toolbar and mode, map, region, age, ping and bot filters">
 
 </div>
 
@@ -29,18 +29,15 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 
 - **Every server at a glance.** About 300 at a time, against the 50 a single Steam search returns.
 - **Ping for each server.** Lowest first, estimated through Steam's relay network.
-- **Filters that combine.** Game mode, map, region, ping and bots, with several values of each, remembered between sessions.
-- **Click to filter.** Click a mode, map, bot setting, region or ping in the list to filter by it; click again to undo.
+- **Filters that combine.** Game mode, map and region (several of each), plus server age, ping and bots, remembered between sessions.
+- **Click to filter.** Click a mode, map, bot setting, region, age or ping in the list to filter by it; click again to undo.
 - **Friends first.** Servers hosted by your Steam friends are marked and pinned to the top.
-- **Follow hosts.** Star a host to pin their server and get an alert when it appears; the star menu shows who is hosting now.
+- **Follow hosts.** Star a host to pin their server and get an alert when it appears; the **Followed hosts** menu shows who is hosting now.
 - **Host search.** Type a host's name to find the server a friend is playing on.
-- **Join, invite, rejoin.** One click to join; invite links put friends in the same server; the recent menu rejoins a host after a disconnect, and shows who is still hosting. Joining also copies the invite link, ready to send (switch it off in the menu).
+- **Join, invite, rejoin.** One click to join; invite links put friends in the same server; the **Recent** menu rejoins a host after a disconnect, and shows who is still hosting. Joining also copies the invite link, ready to send (switch it off in the menu).
 - **Auto-refresh.** Optional, every minute while Dispatch is open, with new servers marked; a ring around the refresh button counts down to the next one. Or pull past the top or bottom of the list to refresh.
 - **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites, follows, alerts and errors, and can be muted from the menu.
-- **Server age.** How long each server has been up, to tell fresh servers still filling up from established ones.
-- **New rounds.** Servers whose map just changed are marked, the best moment to join.
-- **Players online.** How many people are playing Bodycam right now, from Steam.
-- **Light and fast.** One small executable that opens in half a second.
+- **Server age and new rounds.** How long each server has been up, and which just changed map: the best moment to join.
 
 ## Requirements
 
@@ -57,7 +54,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 > [!NOTE]
 > Releases are not code-signed yet, so Windows may warn about an unknown publisher on the first run. Choose **More info**, then **Run anyway**. See the [code signing policy](#code-signing-policy).
 
-The toolbar works like a browser's. Refresh and **Auto** sit on the left. Search runs across the middle like an address bar, and also takes invite links. On the right are **Recent** (history), **Followed hosts** (bookmarks) and the menu. To narrow the list, use the filter buttons beneath it (each opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset**, at the end of the filters, clears everything.
+The toolbar works like a browser's. Refresh and **Auto** sit on the left. Search runs across the middle like an address bar, and also takes invite links. On the right are **Recent** (history), **Followed hosts** (bookmarks) and the menu. To narrow the list, use the filter buttons beneath it (each opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset** appears at the end of the filters once something is filtered, and clears everything.
 
 ### Play with a friend
 
@@ -76,7 +73,7 @@ The toolbar works like a browser's. Refresh and **Auto** sit on the left. Search
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Follow or unfollow the selected host |
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> | Recent servers |
 | <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd>, or scroll on past the top or bottom | Refresh |
-| <kbd>Esc</kbd> | Clear the search |
+| <kbd>Esc</kbd> | Clear the search, or close an open menu |
 
 ## FAQ
 
@@ -108,7 +105,7 @@ Steam doesn't publish them for Bodycam servers: players connect to a host withou
 <summary><b>How is a server's age worked out?</b></summary>
 <br>
 
-Steam numbers lobbies from one counter shared by every game, which rises steadily (tens of thousands a minute). Each refresh notes the newest server's number, which was created moments ago, so the gap to any other server's number gives its age. Expect accuracy within a few minutes. A **NEW ROUND** mark means the server's map or mode changed since an earlier refresh, so turn on **AUTO** to catch them.
+Steam numbers lobbies from one counter shared by every game, which rises steadily (tens of thousands a minute). Each refresh notes the newest server's number, which was created moments ago, so the gap to any other server's number gives its age. Expect accuracy within a few minutes. A **NEW ROUND** mark means the server's map or mode changed since an earlier refresh, so turn on **Auto** to catch them.
 
 </details>
 
@@ -145,7 +142,7 @@ Each lookup briefly runs as Bodycam's Steam app (about a second) to read the gam
 
 ## Privacy
 
-Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. To mark friends' servers it reads your Steam friends list from the Steam client; that stays in memory and is never saved or sent. It saves your filters, sort order, followed hosts, recent servers, window position and measured relay position as you change them, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`.
+Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. To mark friends' servers it reads your Steam friends list from the Steam client; that stays in memory and is never saved or sent. It saves your filters, sort order, preferences, followed hosts, recent servers, window position, measured relay position, lobby-age reference points and the last update check as you change them, in `%APPDATA%\Dispatch\settings.ini`. Its copy of Steam's library, and a log of any unexpected errors, go in `%LOCALAPPDATA%\Dispatch`. To remove Dispatch, delete `Dispatch.exe` and those two folders.
 
 It also asks Steam's public Web API how many people are playing Bodycam, at most once a minute. Besides these Steam requests, Dispatch makes one other network request: at most every 12 hours it asks GitHub for the latest release, to show an *Update available* link. The request carries no personal data. To turn it off, add `updateCheck=0` to `%APPDATA%\Dispatch\settings.ini`.
 
@@ -166,9 +163,9 @@ tests/    unit tests (xUnit)
 .github/  CI and release workflows, README images
 ```
 
-**Contributing.** Issues and pull requests are welcome; keep changes small and focused. Run `pre-commit install` once per clone, and [pre-commit](https://pre-commit.com) then checks file hygiene, secrets, personal data, C# formatting, workflow security and commit messages, and runs the tests before each push. The personal-data check can also read a local denylist (see `.config/pii_wordlist.example.txt`).
+**Contributing.** Issues and pull requests are welcome; keep changes small and focused. Run `pre-commit install` once per clone (it needs Python, the .NET 8 SDK and gitleaks on `PATH`), and [pre-commit](https://pre-commit.com) then checks file hygiene, secrets, personal data, C# formatting, workflow security and commit messages, and runs the tests before each push. The personal-data check can also read a local denylist (see `.config/pii_wordlist.example.txt`).
 
-**Releases.** Pushing a version tag (`v1.2.3`, matching `<Version>` in `src/Dispatch.csproj`) runs the [release workflow](.github/workflows/release.yml) on GitHub-hosted runners. It tests, builds, signs and publishes `Dispatch.exe` with its SHA-256 checksum.
+**Releases.** Pushing a version tag (`v1.2.3`, matching `<Version>` in `src/Dispatch.csproj`) runs the [release workflow](.github/workflows/release.yml) on GitHub-hosted runners. It tests, builds, signs (once SignPath is set up, see below) and publishes `Dispatch.exe` with its SHA-256 checksum.
 
 ## Code signing policy
 

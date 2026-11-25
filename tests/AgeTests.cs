@@ -115,7 +115,6 @@ namespace Dispatch.Tests
             b.Store(b.Plan()[0], new[] { old, unknown, young }, T0);
             Assert.Equal(new[] { "young", "old", "unknown" }, b.Visible(SortKey.Age, false).Select(s => s.Name));
             Assert.Equal(new[] { "old", "young", "unknown" }, b.Visible(SortKey.Age, true).Select(s => s.Name));
-            Assert.Equal(new uint[] { 1, 2, 3 }.Max(), ServerBrowser.NewestCounter(new[] { old, young, unknown }));
         }
     }
 }

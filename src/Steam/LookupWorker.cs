@@ -25,6 +25,12 @@ namespace Dispatch.Steam
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan LocationTimeout = TimeSpan.FromSeconds(10);
 
+        /// <summary>The host's relay location, which every lobby publishes; the ping estimate is computed from it.</summary>
+        private const string PingDataKey = "P2PPING";
+
+        /// <summary>Older game versions published the host's name without the "_s" suffix.</summary>
+        private const string LegacyNameKey = "OWNINGNAME";
+
         public static int Run(string steamApiPath)
         {
             var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
@@ -157,7 +163,7 @@ namespace Dispatch.Steam
             uint newest = 0;
             for (var i = 0; i < (int)count; i++)
             {
-                newest = Math.Max(newest, (uint)(SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i) & 0xFFFFFFFF));
+                newest = LobbyAge.Newer(newest, LobbyAge.CounterOf(SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i)));
             }
 
             if (count >= LobbyAge.MinServersForAnchor && newest > 0)
@@ -199,21 +205,22 @@ namespace Dispatch.Steam
             {
                 var lobby = SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i);
                 string Data(string key) => FromUtf8(SteamAPI_ISteamMatchmaking_GetLobbyData(matchmaking, lobby, Utf8(key)));
-                var name = Data("OWNINGNAME_s");
-                var pingData = Data("P2PPING");
+                var name = Data(LobbyQuery.NameKey);
+                var pingData = Data(PingDataKey);
                 var server = new Server
                 {
                     Id = lobby.ToString(CultureInfo.InvariantCulture),
-                    Owner = Data("OWNINGID"),
-                    Name = name.Length > 0 ? name : Data("OWNINGNAME"),
-                    Mode = Data("GameMode_s"),
-                    Map = Data("Map_s"),
-                    Bots = Data("Bots_s"),
+                    Owner = Data(LobbyQuery.OwnerKey),
+                    Name = name.Length > 0 ? name : Data(LegacyNameKey),
+                    Mode = Data(LobbyQuery.ModeKey),
+                    Map = Data(LobbyQuery.MapKey),
+                    Bots = Data(LobbyQuery.BotsKey),
                     Region = Catalog.RegionFromPing(pingData),
                     Limit = SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit(matchmaking, lobby),
                     Ping = ping.Estimate(lobby, pingData),
                 };
-                if (server.Owner.Length > 0)
+                // The owner ID is lobby data the host sets, and it ends up in the join link, so only a SteamID passes.
+                if (Server.IsSteamId(server.Owner))
                 {
                     output.WriteLine(Protocol.EncodeServer(index, server));
                 }

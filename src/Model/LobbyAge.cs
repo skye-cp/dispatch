@@ -26,12 +26,30 @@ namespace Dispatch.Model
         private readonly List<Anchor> anchors = new List<Anchor>();
 
         public static uint CounterOf(string lobbyId) =>
-            ulong.TryParse(lobbyId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? (uint)(id & 0xFFFFFFFF) : 0;
+            ulong.TryParse(lobbyId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? CounterOf(id) : 0;
+
+        public static uint CounterOf(ulong lobbyId) => (uint)(lobbyId & 0xFFFFFFFF);
+
+        /// <summary>
+        /// How far counter a is ahead of b. The counter is 32 bits and wraps about every 64 days, so it is
+        /// compared as a signed difference, which is right for any two counters less than a month apart.
+        /// </summary>
+        public static int Delta(uint a, uint b) => unchecked((int)(a - b));
+
+        /// <summary>The newer of two counters, across a wrap.</summary>
+        public static uint Newer(uint a, uint b) => a == 0 ? b : b == 0 ? a : Delta(a, b) >= 0 ? a : b;
 
         /// <summary>Records that the newest lobby in a complete refresh had this counter.</summary>
         public void AddAnchor(uint newestCounter, DateTime nowUtc)
         {
             if (newestCounter == 0)
+            {
+                return;
+            }
+
+            // A counter behind the latest anchor is not "created just now"; a repeated old sample would skew the rate.
+            var latest = anchors.OrderBy(a => a.Utc).LastOrDefault();
+            if (latest != null && Delta(newestCounter, latest.Counter) <= 0)
             {
                 return;
             }
@@ -52,11 +70,11 @@ namespace Dispatch.Model
             {
                 var first = recent[0];
                 var best = recent.Where(a => a.Utc - first.Utc >= MinRateSpan)
-                    .OrderByDescending(a => a.Counter - (DefaultRatePerMinute * (a.Utc - first.Utc).TotalMinutes))
+                    .OrderByDescending(a => Delta(a.Counter, first.Counter) - (DefaultRatePerMinute * (a.Utc - first.Utc).TotalMinutes))
                     .FirstOrDefault();
-                if (best != null && best.Counter > first.Counter)
+                if (best != null && Delta(best.Counter, first.Counter) > 0)
                 {
-                    return (best.Counter - first.Counter) / (best.Utc - first.Utc).TotalMinutes;
+                    return Delta(best.Counter, first.Counter) / (best.Utc - first.Utc).TotalMinutes;
                 }
             }
 
@@ -79,8 +97,9 @@ namespace Dispatch.Model
                 recent = new List<Anchor> { anchors.OrderBy(a => a.Utc).Last() };
             }
 
-            var counterNow = recent.Max(a => a.Counter + (rate * (nowUtc - a.Utc).TotalMinutes));
-            return Math.Max(0, (counterNow - counter) / rate);
+            // Measured relative to this server's counter, so a wrap between the two does not matter.
+            var aheadNow = recent.Max(a => Delta(a.Counter, counter) + (rate * (nowUtc - a.Utc).TotalMinutes));
+            return Math.Max(0, aheadNow / rate);
         }
 
         public IEnumerable<string[]> ToRecords() =>

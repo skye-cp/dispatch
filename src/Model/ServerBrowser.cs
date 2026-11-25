@@ -8,7 +8,6 @@ namespace Dispatch.Model
     {
         Ping,
         Age,
-        Nearest,
         Name,
         Mode,
         Map,
@@ -79,9 +78,6 @@ namespace Dispatch.Model
         /// <summary>When a new round was last seen to start on this server, if one was.</summary>
         public DateTime RoundStartUtc(string id) => roundStart.TryGetValue(id, out var t) ? t : DateTime.MinValue;
 
-        /// <summary>The highest lobby counter among the given servers (the newest lobby), or 0.</summary>
-        public static uint NewestCounter(IEnumerable<Server> servers) =>
-            servers.Select(s => LobbyAge.CounterOf(s.Id)).DefaultIfEmpty(0u).Max();
 
         /// <summary>
         /// Asks for every answer again but keeps showing the current ones until each is replaced, so a
@@ -107,8 +103,6 @@ namespace Dispatch.Model
             }
         }
 
-        /// <summary>True while some listed server has no ping yet.</summary>
-        public bool HasUnknownPings() => Pool().Any(s => s.Ping < 0);
 
         /// <summary>Oldest answer behind the current plan, if every request has one.</summary>
         public DateTime? UpdatedUtc()
@@ -153,6 +147,14 @@ namespace Dispatch.Model
         /// <summary>Every server Steam has returned and is still cached, whatever the filters.</summary>
         public List<Server> All() =>
             cache.Values.SelectMany(e => e.Servers).GroupBy(s => s.Id).Select(g => g.First()).ToList();
+
+        /// <summary>
+        /// Servers from answers at most two refresh intervals old. Answers for searches no longer in the plan
+        /// stay cached, so only these count as evidence that a host is hosting now.
+        /// </summary>
+        public List<Server> Current(DateTime nowUtc) =>
+            cache.Values.Where(e => nowUtc - e.FetchedUtc <= MaxAge + MaxAge)
+                .SelectMany(e => e.Servers).GroupBy(s => s.Id).Select(g => g.First()).ToList();
 
         /// <summary>When each server was first returned this session, for highlighting new arrivals.</summary>
         public DateTime FirstSeenUtc(string id) => firstSeen.TryGetValue(id, out var t) ? t : DateTime.MinValue;

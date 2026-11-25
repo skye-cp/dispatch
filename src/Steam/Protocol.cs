@@ -9,8 +9,8 @@ namespace Dispatch.Steam
 {
     /// <summary>
     /// Line protocol between the window and the lookup process. Requests go in on stdin, one per line,
-    /// optionally preceded by the player's cached relay location; answers come back on stdout as
-    /// tab-separated records.
+    /// after optional header lines (the cached relay location, a request for an age sample); answers come
+    /// back on stdout as tab-separated records.
     /// </summary>
     internal static class Protocol
     {
@@ -67,7 +67,7 @@ namespace Dispatch.Steam
 
         public static Server DecodeServer(string[] f, int rank, DateTime seenUtc)
         {
-            if (f.Length < 10)
+            if (f.Length < 10 || !Server.IsSteamId(f[2]) || !Server.IsSteamId(f[3]))
             {
                 return null;
             }
