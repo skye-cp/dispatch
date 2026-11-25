@@ -139,6 +139,7 @@ namespace Dispatch
             Loaded += (s, e) =>
             {
                 Motion.Fade(Frame, 0, 1, 260);
+                Dispatcher.BeginInvoke(new Action(FitToFilterBar), DispatcherPriority.Loaded);
                 clock.Start();
                 watchTimer.Start();
                 _ = UpdateAsync(false);
@@ -262,6 +263,13 @@ namespace Dispatch
             if (lookup == cts)
             {
                 await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                // The error tone sounds once when lookups start failing, not on every automatic retry.
+                if (lastError != null && !errorSounded)
+                {
+                    sounds.Play(Cue.Error);
+                }
+
+                errorSounded = lastError != null;
                 if (baselineUtc == null && lastError == null)
                 {
                     // Servers that show up after this first full load count as new.
@@ -364,13 +372,20 @@ namespace Dispatch
         {
             ProgressTrack.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
             RefreshButton.IsEnabled = !busy;
+            var spin = (RotateTransform)RefreshIcon.RenderTransform;
             if (busy)
             {
                 progress.Begin(this, true);
+                if (Motion.Enabled)
+                {
+                    spin.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(0, 360, TimeSpan.FromSeconds(0.9)) { RepeatBehavior = RepeatBehavior.Forever });
+                }
             }
             else
             {
                 progress.Stop(this);
+                spin.BeginAnimation(RotateTransform.AngleProperty, null);
+                spin.Angle = 0;
             }
         }
 
@@ -666,6 +681,82 @@ namespace Dispatch
             SoundButton.ToolTip = sounds.Enabled ? "Sounds on. Click to mute." : "Sounds muted. Click to turn on.";
         }
 
+        // ---------- small touches ----------
+
+        private DispatcherTimer copiedTimer;
+        private bool errorSounded;
+
+        /// <summary>The copy button briefly confirms with a check mark.</summary>
+        private void ShowCopied()
+        {
+            CopyIcon.Text = "\uE73E";
+            CopyText.Text = "COPIED";
+            Motion.Fade(CopyButton, 0.4, 1, 200);
+            if (copiedTimer == null)
+            {
+                copiedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
+                copiedTimer.Tick += (s, e) =>
+                {
+                    copiedTimer.Stop();
+                    CopyIcon.Text = "\uE71B";
+                    CopyText.Text = "COPY INVITE LINK";
+                    Motion.Fade(CopyButton, 0.4, 1, 200);
+                };
+            }
+
+            copiedTimer.Stop();
+            copiedTimer.Start();
+        }
+
+        /// <summary>While AUTO is on, a small dot on it pulses like a live indicator.</summary>
+        private void ShowAutoState()
+        {
+            AutoDot.Visibility = autoRefresh ? Visibility.Visible : Visibility.Collapsed;
+            if (autoRefresh && Motion.Enabled)
+            {
+                AutoDot.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.3, TimeSpan.FromSeconds(0.9)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
+            }
+            else
+            {
+                AutoDot.BeginAnimation(OpacityProperty, null);
+            }
+        }
+
+        /// <summary>Widens the window, if needed, so the search and every filter button fit on one line.</summary>
+        private void FitToFilterBar()
+        {
+            if (WindowState != WindowState.Normal)
+            {
+                return;
+            }
+
+            var buttons = 0.0;
+            foreach (UIElement child in FilterBar.Children)
+            {
+                child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                buttons += child.DesiredSize.Width;
+            }
+
+            // Everything else on the toolbar's line, plus room for RESET and for selections longer than "Any".
+            var others = ActualWidth - FilterBar.ActualWidth;
+            var reset = ResetButton.Visibility == Visibility.Visible ? 0 : 70;
+            var needed = Math.Ceiling(others + buttons + reset + 60);
+            var available = SystemParameters.WorkArea.Width;
+            if (Width >= needed || needed > available)
+            {
+                needed = Math.Min(Math.Max(Width, needed), available);
+            }
+
+            if (Width < needed)
+            {
+                Width = needed;
+                if (Left + Width > SystemParameters.WorkArea.Right)
+                {
+                    Left = Math.Max(SystemParameters.WorkArea.Left, SystemParameters.WorkArea.Right - Width);
+                }
+            }
+        }
+
         // ---------- status ----------
 
         private void ShowDefaultStatus()
@@ -703,6 +794,10 @@ namespace Dispatch
             Status.Text = text;
             Status.Foreground = (Brush)FindResource(problem ? "RedHotBrush" : "TextBrush");
             Motion.Fade(Status, 0, 1, 220);
+            if (problem)
+            {
+                sounds.Play(Cue.Error);
+            }
             messageTimer.Stop();
             messageTimer.Start();
         }
@@ -1487,6 +1582,22 @@ namespace Dispatch
             {
                 FlashTaskbar();
             }
+
+            foreach (var s in appeared)
+            {
+                if (shown.TryGetValue(s.Id, out var row))
+                {
+                    row.IsHighlighted = false;
+                    row.IsHighlighted = true;
+                    var done = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                    done.Tick += (o, a) =>
+                    {
+                        done.Stop();
+                        row.IsHighlighted = false;
+                    };
+                    done.Start();
+                }
+            }
         }
 
         private void OnStarClick(object sender, MouseButtonEventArgs e)
@@ -1508,6 +1619,11 @@ namespace Dispatch
 
             Render();
             QueueSave();
+            if (on)
+            {
+                sounds.Play(Cue.Follow);
+            }
+
             Say(on
                 ? "Following " + s.Name + ". Their server stays on top, and Dispatch alerts you when it appears."
                 : "Stopped following " + s.Name + ".");
@@ -1575,6 +1691,7 @@ namespace Dispatch
             }
 
             autoRefresh = AutoToggle.IsChecked == true;
+            ShowAutoState();
             QueueSave();
             Say(autoRefresh
                 ? "Auto-refresh on: every minute while Dispatch is open. New servers get a red mark."
@@ -1846,6 +1963,7 @@ namespace Dispatch
                 lastCopied = link;
                 ClipboardButton.Visibility = Visibility.Collapsed;
                 sounds.Play(Cue.Copy);
+                ShowCopied();
                 Say("Invite link for " + s.Name + " copied. Your friend opens it with Bodycam running.");
             }
         }
@@ -2053,6 +2171,7 @@ namespace Dispatch
             quiet = true;
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
+            ShowAutoState();
 
 
             var width = settings.GetDouble("width", Width);

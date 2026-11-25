@@ -26,6 +26,7 @@ namespace Dispatch.Model
         private bool isNew;
         private double ageMinutes = -1;
         private bool isNewRound;
+        private bool isHighlighted;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -120,6 +121,13 @@ namespace Dispatch.Model
         {
             get => isNewRound;
             set => Set(ref isNewRound, value, nameof(IsNewRound));
+        }
+
+        /// <summary>Set by the window for a few seconds when a followed host's server appears: the row pulses.</summary>
+        public bool IsHighlighted
+        {
+            get => isHighlighted;
+            set => Set(ref isHighlighted, value, nameof(IsHighlighted));
         }
 
         /// <summary>Set by the window while the row animates out of the list.</summary>

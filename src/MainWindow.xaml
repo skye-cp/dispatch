@@ -37,13 +37,13 @@
                                Text="Find a Bodycam server. Join it, or send a friend the link." />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                    <Button x:Name="SoundButton" Style="{StaticResource Caption}" Content="&#xE767;" ToolTip="Sounds on. Click to mute."
+                    <Button x:Name="SoundButton" Style="{StaticResource Caption}" AutomationProperties.Name="Sounds" Content="&#xE767;" ToolTip="Sounds on. Click to mute."
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnSoundToggle" />
-                    <Button x:Name="MinButton" Style="{StaticResource Caption}" Content="&#xE921;" ToolTip="Minimize"
+                    <Button x:Name="MinButton" Style="{StaticResource Caption}" AutomationProperties.Name="Minimize" Content="&#xE921;" ToolTip="Minimize"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnMinimize" />
-                    <Button x:Name="MaxButton" Style="{StaticResource Caption}" Content="&#xE922;" ToolTip="Maximize"
+                    <Button x:Name="MaxButton" Style="{StaticResource Caption}" AutomationProperties.Name="Maximize" Content="&#xE922;" ToolTip="Maximize"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnMaximize" />
-                    <Button Style="{StaticResource CaptionClose}" Content="&#xE8BB;" ToolTip="Close"
+                    <Button Style="{StaticResource CaptionClose}" AutomationProperties.Name="Close" Content="&#xE8BB;" ToolTip="Close"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnClose" />
                 </StackPanel>
             </Grid>
@@ -59,13 +59,13 @@
                 <Grid VerticalAlignment="Top">
                     <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches all"
                              TextChanged="OnSearchChanged" PreviewKeyDown="OnSearchKey" Padding="0,0,26,0" />
-                    <Button x:Name="ClearSearch" Style="{StaticResource Link}" FontFamily="{StaticResource IconFont}" FontSize="10"
+                    <Button x:Name="ClearSearch" Style="{StaticResource Link}" AutomationProperties.Name="Clear search" FontFamily="{StaticResource IconFont}" FontSize="10"
                             Content="&#xE711;" HorizontalAlignment="Right" Margin="0,0,3,0" Visibility="Collapsed"
                             ToolTip="Clear (Esc)" Click="OnClearSearch" />
                 </Grid>
                 <WrapPanel x:Name="FilterBar" Grid.Column="1" Margin="10,0,4,0">
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="ModeButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Game modes to show">
+                        <Button x:Name="ModeButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Mode filter" Click="OnFilterButton" ToolTip="Game modes to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="MODE" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="ModeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -84,7 +84,7 @@
                         </Popup>
                     </Grid>
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="MapButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Maps to show">
+                        <Button x:Name="MapButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Map filter" Click="OnFilterButton" ToolTip="Maps to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="MAP" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="MapValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -103,7 +103,7 @@
                         </Popup>
                     </Grid>
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="RegionButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Steam relay regions to show">
+                        <Button x:Name="RegionButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Region filter" Click="OnFilterButton" ToolTip="Steam relay regions to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="REGION" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="RegionValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -122,7 +122,7 @@
                         </Popup>
                     </Grid>
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="AgeButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="How long servers have been up">
+                        <Button x:Name="AgeButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Age filter" Click="OnFilterButton" ToolTip="How long servers have been up">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="AGE" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="AgeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -141,7 +141,7 @@
                         </Popup>
                     </Grid>
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="PingButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Highest ping to show">
+                        <Button x:Name="PingButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Ping filter" Click="OnFilterButton" ToolTip="Highest ping to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="PING" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="PingValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -160,7 +160,7 @@
                         </Popup>
                     </Grid>
                     <Grid Margin="0,0,6,6">
-                        <Button x:Name="BotButton" Style="{StaticResource FilterButton}" Click="OnFilterButton" ToolTip="Servers with or without bots">
+                        <Button x:Name="BotButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Bot filter" Click="OnFilterButton" ToolTip="Servers with or without bots">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="BOT" Style="{StaticResource FilterLabel}" />
                                 <TextBlock x:Name="BotValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
@@ -182,11 +182,21 @@
                 <Button x:Name="ResetButton" Grid.Column="2" Style="{StaticResource Link}" Content="RESET" Margin="0,2,8,0"
                         VerticalAlignment="Top" ToolTip="Clear every filter and the search" Click="OnReset" />
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top">
-                    <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0,0,8,0" Padding="10,5,10,6" Content="AUTO"
+                    <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0,0,8,0" Padding="10,5,10,6" AutomationProperties.Name="Auto-refresh"
                                   ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
-                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged" />
-                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" Content="&#xE72C;"
-                            ToolTip="Refresh from Steam (F5)" Click="OnRefresh" />
+                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="AutoDot" Width="6" Height="6" Fill="{StaticResource OnRedBrush}" Margin="0,1,7,0"
+                                     VerticalAlignment="Center" Visibility="Collapsed" />
+                            <TextBlock Text="AUTO" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" AutomationProperties.Name="Refresh"
+                            ToolTip="Refresh from Steam (F5), or scroll on past the top or bottom of the list" Click="OnRefresh">
+                        <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform><RotateTransform /></TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Button>
                 </StackPanel>
             </Grid>
             <!-- Column header: the game's red bar -->
@@ -223,7 +233,7 @@
             </Grid>
 
             <!-- Server list -->
-            <Grid Grid.Row="4" Margin="18,2,8,0">
+            <Grid Grid.Row="4" Margin="18,2,8,0" ClipToBounds="True">
                 <ListBox x:Name="List" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Row}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Visible"
                          VirtualizingPanel.IsVirtualizing="True"
@@ -255,6 +265,8 @@
                                     <ColumnDefinition Width="72" />
                                     <ColumnDefinition Width="76" />
                                 </Grid.ColumnDefinitions>
+                                <Rectangle x:Name="AlertRing" Grid.ColumnSpan="8" Margin="-1" RadiusX="2" RadiusY="2" Stroke="{StaticResource RedHotBrush}"
+                                           StrokeThickness="2" Opacity="0" IsHitTestVisible="False" />
                                 <Rectangle x:Name="NewMark" Width="3" HorizontalAlignment="Left" Margin="-1,-1,0,-1"
                                            Fill="{StaticResource RedBrush}" Visibility="Collapsed" ToolTip="New since the list first loaded" />
                                 <!-- Left-aligned with a star column: badges follow the name, and only the name shrinks when space runs out. -->
@@ -361,6 +373,16 @@
                                     </DataTrigger.EnterActions>
                                 </DataTrigger>
 
+                                <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="AlertRing" Storyboard.TargetProperty="Opacity" From="0" To="1"
+                                                                 Duration="0:0:0.35" AutoReverse="True" RepeatBehavior="3x" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                </DataTrigger>
                                 <DataTrigger Binding="{Binding IsNewRound}" Value="True">
                                     <Setter TargetName="RoundBadge" Property="Visibility" Value="Visible" />
                                     <DataTrigger.EnterActions>
@@ -459,8 +481,8 @@
                     <Button x:Name="CopyButton" Style="{StaticResource Ghost}" Margin="0,0,8,0" ToolTip="Copy an invite link for a friend (Ctrl+C)"
                             Click="OnCopyLink">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE71B;" VerticalAlignment="Center" Margin="0,1,8,0" />
-                            <TextBlock Text="COPY INVITE LINK" />
+                            <TextBlock x:Name="CopyIcon" FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE71B;" VerticalAlignment="Center" Margin="0,1,8,0" />
+                            <TextBlock x:Name="CopyText" Text="COPY INVITE LINK" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="JoinButton" Style="{StaticResource Primary}" MinWidth="110" ToolTip="Join this server (Enter or double-click)"
