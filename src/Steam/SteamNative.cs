@@ -58,6 +58,31 @@ namespace Dispatch.Steam
         public static extern bool SteamAPI_ISteamUtils_GetAPICallResult(
             IntPtr self, ulong call, out uint result, int size, int expectedCallback, [MarshalAs(UnmanagedType.I1)] out bool failed);
 
+        /// <summary>Size of SteamNetworkPingLocation_t, an opaque blob.</summary>
+        public const int PingLocationSize = 512;
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SteamAPI_RunCallbacks();
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr SteamAPI_SteamNetworkingUtils_SteamAPI_v004();
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SteamAPI_ISteamNetworkingUtils_InitRelayNetworkAccess(IntPtr self);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern float SteamAPI_ISteamNetworkingUtils_GetLocalPingLocation(IntPtr self, byte[] location);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool SteamAPI_ISteamNetworkingUtils_ParsePingLocationString(IntPtr self, byte[] text, byte[] location);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SteamAPI_ISteamNetworkingUtils_ConvertPingLocationToString(IntPtr self, byte[] location, byte[] buffer, int size);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int SteamAPI_ISteamNetworkingUtils_EstimatePingTimeBetweenTwoLocations(IntPtr self, byte[] location1, byte[] location2);
+
         public static byte[] Utf8(string s)
         {
             var bytes = Encoding.UTF8.GetBytes(s ?? "");

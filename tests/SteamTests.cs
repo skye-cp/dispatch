@@ -39,7 +39,7 @@ namespace Dispatch.Tests
             var line = Protocol.EncodeServer(3, s);
             Assert.DoesNotContain('\n', line);
             var f = Protocol.Split(line);
-            Assert.Equal(10, f.Length);
+            Assert.Equal(11, f.Length);
             Assert.Equal(Protocol.ServerRecord, f[0]);
             var back = Protocol.DecodeServer(f, 5, DateTime.UtcNow);
             Assert.Equal("tab here newline ★", back.Name);
@@ -62,6 +62,25 @@ namespace Dispatch.Tests
             const string acf = "\"AppState\"\n{\n\t\"appid\"\t\t\"2406770\"\n\t\"name\"\t\t\"Bodycam\"\n\t\"installdir\"\t\t\"Bodycam\"\n}\n";
             Assert.Equal("Bodycam", GameLocator.ParseInstallDir(acf));
             Assert.Equal("", GameLocator.ParseInstallDir("{}"));
+        }
+
+        [Fact]
+        public void PingsAndLocationSurviveTheProtocol()
+        {
+            var s = new Server { Id = "1", Owner = "2", Name = "n", Ping = 42 };
+            Assert.Equal(42, Protocol.DecodeServer(Protocol.Split(Protocol.EncodeServer(0, s)), 0, DateTime.UtcNow).Ping);
+
+            var old = Protocol.Split("L\t0\t1\t2\tn\tm\tp\tb\tgru\t10");
+            Assert.Equal(Server.NoPing, Protocol.DecodeServer(old, 0, DateTime.UtcNow).Ping);
+
+            Assert.True(Protocol.TryDecodePing(Protocol.Split(Protocol.EncodePing("123", 77)), out var lobby, out var ms));
+            Assert.Equal("123", lobby);
+            Assert.Equal(77, ms);
+
+            const string location = "gru=18+1,eze=46+4/40+1";
+            Assert.True(Protocol.TryDecodeLocationHeader(Protocol.EncodeLocationHeader(location), out var back));
+            Assert.Equal(location, back);
+            Assert.False(Protocol.TryDecodeLocationHeader(Protocol.EncodeQuery(LobbyQuery.HostId("9")), out _));
         }
 
         [Fact]

@@ -6,6 +6,7 @@ namespace Dispatch.Model
 {
     internal enum SortKey
     {
+        Ping,
         Nearest,
         Name,
         Mode,
@@ -13,6 +14,22 @@ namespace Dispatch.Model
         Region,
         Bots,
         Slots,
+    }
+
+    internal sealed class RegionInfo
+    {
+        public RegionInfo(string code, int count, int ping)
+        {
+            Code = code;
+            Count = count;
+            Ping = ping;
+        }
+
+        public string Code { get; }
+        public int Count { get; }
+
+        /// <summary>Lowest known ping to a host in the region, or <see cref="Server.NoPing"/>.</summary>
+        public int Ping { get; }
     }
 
     /// <summary>Caches Steam answers per request and builds the visible list. No UI, no Steam.</summary>
@@ -34,6 +51,21 @@ namespace Dispatch.Model
             cache[query.Key] = new Entry(servers, nowUtc);
 
         public void Invalidate() => cache.Clear();
+
+        /// <summary>Fills in pings measured after the servers were listed.</summary>
+        public void ApplyPings(IReadOnlyDictionary<string, int> pings)
+        {
+            foreach (var s in cache.Values.SelectMany(e => e.Servers))
+            {
+                if (pings.TryGetValue(s.Id, out var ms))
+                {
+                    s.Ping = ms;
+                }
+            }
+        }
+
+        /// <summary>True while some listed server has no ping yet.</summary>
+        public bool HasUnknownPings() => Pool().Any(s => s.Ping < 0);
 
         /// <summary>Oldest answer behind the current plan, if every request has one.</summary>
         public DateTime? UpdatedUtc()
@@ -99,6 +131,12 @@ namespace Dispatch.Model
                 case SortKey.Slots:
                     sorted = descending ? list.OrderByDescending(s => s.Limit) : list.OrderBy(s => s.Limit);
                     break;
+                case SortKey.Ping:
+                    // Unknown pings always go last, whichever the direction.
+                    sorted = descending
+                        ? list.OrderBy(s => s.Ping < 0).ThenByDescending(s => s.Ping)
+                        : list.OrderBy(s => s.Ping < 0).ThenBy(s => s.Ping);
+                    break;
                 default:
                     sorted = descending ? list.OrderByDescending(s => s.Rank) : list.OrderBy(s => s.Rank);
                     break;
@@ -107,15 +145,20 @@ namespace Dispatch.Model
             return sorted.ThenBy(s => s.Rank).ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        /// <summary>Region codes of every server Steam has returned, busiest first, so region chips stay put.</summary>
-        public List<KeyValuePair<string, int>> Regions() =>
+        /// <summary>
+        /// Regions of every server Steam has returned (not just the filtered ones, so chips stay put),
+        /// nearest first once pings are known, otherwise busiest first.
+        /// </summary>
+        public List<RegionInfo> Regions() =>
             cache.Values.SelectMany(e => e.Servers)
                 .GroupBy(s => s.Id).Select(g => g.First())
                 .Where(s => s.Region.Length > 0)
                 .GroupBy(s => s.Region, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new KeyValuePair<string, int>(g.Key, g.Count()))
-                .OrderByDescending(p => p.Value)
-                .ThenBy(p => p.Key, StringComparer.Ordinal)
+                .Select(g => new RegionInfo(g.Key, g.Count(), g.Where(s => s.Ping >= 0).Select(s => s.Ping).DefaultIfEmpty(Server.NoPing).Min()))
+                .OrderBy(r => r.Ping < 0)
+                .ThenBy(r => r.Ping)
+                .ThenByDescending(r => r.Count)
+                .ThenBy(r => r.Code, StringComparer.Ordinal)
                 .ToList();
 
         private static IOrderedEnumerable<Server> Order(IEnumerable<Server> list, Func<Server, string> by, bool descending, IComparer<string> cmp) =>

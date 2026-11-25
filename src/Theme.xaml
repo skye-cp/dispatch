@@ -27,6 +27,9 @@
     <SolidColorBrush x:Key="RedBrush" Color="{StaticResource RedColor}" />
     <SolidColorBrush x:Key="RedHotBrush" Color="{StaticResource RedHotColor}" />
     <SolidColorBrush x:Key="OnRedBrush" Color="{StaticResource OnRedColor}" />
+    <!-- Ping quality marks: muted so the game's single red stays dominant. -->
+    <SolidColorBrush x:Key="GoodBrush" Color="#5FB97A" />
+    <SolidColorBrush x:Key="FairBrush" Color="#D9A441" />
 
     <!-- Bahnschrift and Consolas ship with Windows 10 and 11, so nothing is bundled. -->
     <FontFamily x:Key="UiFont">Bahnschrift SemiCondensed, Bahnschrift, Segoe UI</FontFamily>

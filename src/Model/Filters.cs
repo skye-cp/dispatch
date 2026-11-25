@@ -23,11 +23,14 @@ namespace Dispatch.Model
 
         public bool IsHostSearch => !string.IsNullOrEmpty(ExactHost);
 
+        /// <summary>Highest ping to show, in ms; 0 means any. Servers whose ping is not known yet stay visible.</summary>
+        public int MaxPing { get; set; }
+
         public string OneSidedBots => Bots.Count == 1 ? Bots.First() : null;
 
         public int ActiveCount =>
             (Modes.Count > 0 ? 1 : 0) + (Maps.Count > 0 ? 1 : 0) + (OneSidedBots != null ? 1 : 0) +
-            (Regions.Count > 0 ? 1 : 0) + (string.IsNullOrWhiteSpace(Text) ? 0 : 1);
+            (Regions.Count > 0 ? 1 : 0) + (MaxPing > 0 ? 1 : 0) + (string.IsNullOrWhiteSpace(Text) ? 0 : 1);
 
         public void Reset()
         {
@@ -35,6 +38,7 @@ namespace Dispatch.Model
             Maps.Clear();
             Bots.Clear();
             Regions.Clear();
+            MaxPing = 0;
             Text = "";
             ExactHost = "";
         }
@@ -63,6 +67,11 @@ namespace Dispatch.Model
             }
 
             if (Regions.Count > 0 && !Regions.Contains(s.Region))
+            {
+                return false;
+            }
+
+            if (MaxPing > 0 && s.Ping >= 0 && s.Ping > MaxPing)
             {
                 return false;
             }

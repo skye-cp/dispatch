@@ -114,12 +114,53 @@ namespace Dispatch.Tests
             Assert.Equal(new[] { "charlie", "alpha", "bravo" }, b.Visible(SortKey.Nearest, false).Select(s => s.Name));
             Assert.Equal(new[] { "alpha", "bravo", "charlie" }, b.Visible(SortKey.Name, false).Select(s => s.Name));
             Assert.Equal(new[] { "charlie", "bravo", "alpha" }, b.Visible(SortKey.Name, true).Select(s => s.Name));
-            Assert.Equal("gru", b.Regions()[0].Key);
-            Assert.Equal(2, b.Regions()[0].Value);
+            Assert.Equal("gru", b.Regions()[0].Code);
+            Assert.Equal(2, b.Regions()[0].Count);
 
             b.Filters.Modes.Add("Zombie");
             Assert.Empty(b.Pool());
             Assert.Equal(2, b.Regions().Count);
+        }
+
+        [Fact]
+        public void PingSortsLowestFirstWithUnknownLastAndRanksRegions()
+        {
+            var b = new ServerBrowser();
+            var far = S("far", region: "iad", rank: 0);
+            var near = S("near", rank: 1);
+            var unknown = S("unknown", region: "lim", rank: 2);
+            b.Store(b.Plan()[0], new[] { far, near, unknown }, DateTime.UtcNow);
+            Assert.True(b.HasUnknownPings());
+
+            b.ApplyPings(new System.Collections.Generic.Dictionary<string, int> { [far.Id] = 140, [near.Id] = 20 });
+            Assert.Equal(new[] { "near", "far", "unknown" }, b.Visible(SortKey.Ping, false).Select(s => s.Name));
+            Assert.Equal(new[] { "far", "near", "unknown" }, b.Visible(SortKey.Ping, true).Select(s => s.Name));
+            Assert.Equal(new[] { "gru", "iad", "lim" }, b.Regions().Select(r => r.Code));
+            Assert.Equal(20, b.Regions()[0].Ping);
+        }
+
+        [Fact]
+        public void MaxPingHidesSlowServersButKeepsUnmeasuredOnes()
+        {
+            var f = new FilterState { MaxPing = 100 };
+            Assert.True(f.Matches(new Server { Name = "a", Mode = "Zombie", Ping = 80 }));
+            Assert.False(f.Matches(new Server { Name = "b", Mode = "Zombie", Ping = 120 }));
+            Assert.True(f.Matches(new Server { Name = "c", Mode = "Zombie", Ping = Server.NoPing }));
+            Assert.Equal(1, f.ActiveCount);
+            f.Reset();
+            Assert.Equal(0, f.MaxPing);
+        }
+
+        [Theory]
+        [InlineData(-1, "Unknown", "—")]
+        [InlineData(35, "Good", "35")]
+        [InlineData(110, "Fair", "110")]
+        [InlineData(200, "Poor", "200")]
+        public void PingLevels(int ping, string level, string text)
+        {
+            var s = new Server { Ping = ping };
+            Assert.Equal(level, s.PingLevel);
+            Assert.Equal(text, s.PingText);
         }
 
         [Theory]

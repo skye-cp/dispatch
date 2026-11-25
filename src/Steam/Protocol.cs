@@ -8,8 +8,9 @@ using Dispatch.Model;
 namespace Dispatch.Steam
 {
     /// <summary>
-    /// Line protocol between the window and the lookup process. Requests go in on stdin, one per line;
-    /// answers come back on stdout as tab-separated records.
+    /// Line protocol between the window and the lookup process. Requests go in on stdin, one per line,
+    /// optionally preceded by the player's cached relay location; answers come back on stdout as
+    /// tab-separated records.
     /// </summary>
     internal static class Protocol
     {
@@ -17,7 +18,10 @@ namespace Dispatch.Steam
         public const string DoneRecord = "Q";
         public const string FailedRecord = "F";
         public const string ErrorRecord = "E";
+        public const string LocationRecord = "P";
+        public const string PingRecord = "G";
 
+        private const string LocationHeader = "@location";
         private const char FieldSep = '\t';
         private const char PartSep = '\u001f';
 
@@ -40,9 +44,23 @@ namespace Dispatch.Steam
             return new LobbyQuery(filters);
         }
 
+        public static string EncodeLocationHeader(string location) => LocationHeader + FieldSep + Clean(location);
+
+        public static bool TryDecodeLocationHeader(string line, out string location)
+        {
+            location = null;
+            if (!line.StartsWith(LocationHeader + FieldSep, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            location = line.Substring(LocationHeader.Length + 1);
+            return true;
+        }
+
         public static string EncodeServer(int query, Server s) =>
             Join(ServerRecord, query.ToString(CultureInfo.InvariantCulture), s.Id, s.Owner, s.Name, s.Mode, s.Map, s.Bots,
-                s.Region, s.Limit.ToString(CultureInfo.InvariantCulture));
+                s.Region, s.Limit.ToString(CultureInfo.InvariantCulture), s.Ping.ToString(CultureInfo.InvariantCulture));
 
         public static Server DecodeServer(string[] f, int rank, DateTime seenUtc)
         {
@@ -52,6 +70,7 @@ namespace Dispatch.Steam
             }
 
             int.TryParse(f[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit);
+            var ping = f.Length > 10 && int.TryParse(f[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : Server.NoPing;
             return new Server
             {
                 Id = f[2],
@@ -62,6 +81,7 @@ namespace Dispatch.Steam
                 Bots = f[7],
                 Region = f[8],
                 Limit = limit,
+                Ping = ping,
                 Rank = rank,
                 SeenUtc = seenUtc,
             };
@@ -73,6 +93,17 @@ namespace Dispatch.Steam
         public static string EncodeFailed(int query) => Join(FailedRecord, query.ToString(CultureInfo.InvariantCulture));
 
         public static string EncodeError(string code, string message) => Join(ErrorRecord, code, message);
+
+        public static string EncodeLocation(string location) => Join(LocationRecord, location);
+
+        public static string EncodePing(string lobby, int ms) => Join(PingRecord, lobby, ms.ToString(CultureInfo.InvariantCulture));
+
+        public static bool TryDecodePing(string[] f, out string lobby, out int ms)
+        {
+            lobby = f.Length > 1 ? f[1] : null;
+            ms = Server.NoPing;
+            return f.Length > 2 && int.TryParse(f[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out ms);
+        }
 
         public static string[] Split(string line) => line.Split(FieldSep);
 
