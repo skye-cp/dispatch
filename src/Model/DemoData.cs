@@ -30,12 +30,25 @@ namespace Dispatch.Model
             ("Last Call", "Deathmatch", "WornHouse", "true", "lax", 7, 171),
         };
 
+        /// <summary>An invented Steam friend hosting one demo server, so screenshots show the FRIEND badge.</summary>
+        public static readonly IReadOnlyDictionary<string, string> Friends = new Dictionary<string, string>
+        {
+            [OwnerOf(6)] = "Sam",
+        };
+
+        /// <summary>A demo host shown as followed.</summary>
+        public static readonly string FollowedOwner = OwnerOf(4);
+
+        public static string FollowedName => Rows[4].Name;
+
+        private static string OwnerOf(int row) => (200000000000UL + (ulong)row).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         public static List<Server> For(LobbyQuery query, DateTime nowUtc)
         {
             var servers = Rows.Select((r, i) => new Server
             {
                 Id = (100000000000000000UL + (ulong)i).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                Owner = (200000000000UL + (ulong)i).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Owner = OwnerOf(i),
                 Name = r.Name,
                 Mode = r.Mode,
                 Map = r.Map,

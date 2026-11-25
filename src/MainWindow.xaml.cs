@@ -995,7 +995,7 @@ namespace Dispatch
         private void Annotate()
         {
             var now = DateTime.UtcNow;
-            var friends = client.Friends;
+            var friends = demo ? DemoData.Friends : client.Friends;
             var all = browser.All();
             foreach (var s in all)
             {
@@ -1596,6 +1596,10 @@ namespace Dispatch
             }
 
             follows.Load(settings.GetRecords("followed"));
+            if (demo)
+            {
+                follows.Toggle(DemoData.FollowedOwner, DemoData.FollowedName);
+            }
             recent.Load(settings.GetRecords("recent"));
             autoRefresh = settings.Get("autoRefresh") == "1";
             quiet = true;
