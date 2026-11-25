@@ -1,0 +1,6 @@
+# Copy to .config/pii_wordlist.local.txt (gitignored) and list one term per line.
+# The PII hook blocks any staged line containing a term, case-insensitive, whole word.
+# Good candidates: your real name, usernames, machine names, employer or client names.
+Jane Doe
+jdoe
+DESKTOP-EXAMPLE
