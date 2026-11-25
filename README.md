@@ -1,71 +1,137 @@
+<div align="center">
+
+<img src=".github/assets/logo.png" width="96" alt="Dispatch logo">
+
 # Dispatch
 
-Find a Bodycam server, join it, or send a friend a link that puts them in the same server.
+**Find a Bodycam server, join it, or send a friend the link.**
 
-Bodycam's party system is offline, so friends can't queue together, and the in-game server list has no search or filters. Dispatch reads the same public server list from Steam, lets you filter and search it, and joins through Steam's own join link.
+[![Latest release](https://img.shields.io/github/v/release/skye-cp/dispatch?label=release&color=d8433b)](https://github.com/skye-cp/dispatch/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/skye-cp/dispatch/ci.yml?branch=main&label=tests)](https://github.com/skye-cp/dispatch/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-555)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-## Use
+### [⬇ Download Dispatch.exe](https://github.com/skye-cp/dispatch/releases/latest/download/Dispatch.exe)
 
-Requires Windows 10 or 11, Steam running, and Bodycam installed. Nothing to install: download `Dispatch.exe` from [Releases](../../releases) and run it.
+<sub>Single portable file, about 115 KB. No installer.</sub>
 
-1. Start Bodycam and wait at the main menu.
-2. Pick a server and press **Join**. The game connects to it. Servers are listed lowest ping first.
-3. To bring a friend, press **Copy invite link** and send it. Your friend opens it with Bodycam running, either with **Join pasted link** in Dispatch or by pasting it into Win+R.
+<img src=".github/assets/screenshot.png" width="860" alt="Dispatch listing Bodycam servers with ping, mode, map and region filters">
 
-To join a friend who is already playing, type the host name of their server (the name shown in the game's server list) and press Enter.
+</div>
+
+Bodycam's party system is offline, so friends can't queue together, and the in-game server list has no search, filters or ping. Dispatch reads the same public server list from Steam, lets you sort and filter it, and puts you or your friends into a chosen server through Steam's own join link.
+
+## Features
+
+- **Every server at a glance:** about 300 at a time, against the 50 a single Steam search returns.
+- **Ping for each server,** lowest first, estimated through Steam's relay network.
+- **Filters that combine:** game mode, map, region, ping and bots, with several values of each.
+- **Host search:** type a host's name to find the server a friend is playing on.
+- **One-click join,** and **invite links** your friends open straight into the same server.
+- **Light and fast:** one 115 KB executable that opens in half a second and remembers your filters.
+
+## Requirements
+
+- Windows 10 or 11 (Dispatch uses .NET Framework 4.8, which ships with Windows)
+- Steam, running and signed in
+- Bodycam, installed
+
+## Quick start
+
+1. [Download `Dispatch.exe`](https://github.com/skye-cp/dispatch/releases/latest/download/Dispatch.exe) and run it. If Windows warns about an unknown publisher, choose **More info → Run anyway**. See [Code signing policy](#code-signing-policy).
+2. Start Bodycam and wait at the main menu.
+3. Pick a server and press **Join**.
+
+### Play with a friend
+
+- **Bring them to your server:** select it, press **Copy invite link**, and send the link. Your friend opens it with Bodycam running, either with **Join pasted link** in Dispatch or by pasting it into <kbd>Win</kbd>+<kbd>R</kbd>.
+- **Go to theirs:** type their server's host name, the name shown in the game's server list, and press <kbd>Enter</kbd>.
+
+### Shortcuts
 
 | Key | Action |
 | --- | --- |
-| Enter, double-click | Join the selected server |
-| Ctrl+C | Copy its invite link |
-| Ctrl+Shift+V | Join the link on the clipboard |
-| Ctrl+F | Search host names; Enter searches every server |
-| F5 | Refresh from Steam |
-| Esc | Clear the search |
+| <kbd>Enter</kbd> or double-click | Join the selected server |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> | Copy its invite link |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Join the link on the clipboard |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Search host names (<kbd>Enter</kbd> searches every server) |
+| <kbd>F5</kbd> | Refresh |
+| <kbd>Esc</kbd> | Clear the search |
 
-Filters combine: several values of one kind match any of them (Zombie *or* Versus); different kinds must all match.
+## FAQ
+
+<details>
+<summary><b>Is it safe to use with Easy Anti-Cheat?</b></summary>
+
+Dispatch never reads or writes the game's memory, files or network traffic, injects nothing and sends no input to the game. It talks only to Steam, the way Steam's own server browser and invites do. It is still an unofficial tool, so use it at your own risk.
+</details>
+
+<details>
+<summary><b>Why are there no player counts?</b></summary>
+
+Steam doesn't publish them for Bodycam servers. <i>Slots</i> is the server's size. If a server turns out to be full, the game says the connection failed and returns to the menu.
+</details>
+
+<details>
+<summary><b>How accurate is the ping?</b></summary>
+
+It is Steam's estimate of the round trip through its relay network, from your measured position to the host's. It's close, but the game may route differently. Dispatch measures your position once, which takes a few seconds, and reuses it for two hours.
+</details>
+
+<details>
+<summary><b>A join didn't work.</b></summary>
+
+Join from Bodycam's main menu: opening a link while the game is closed has failed in testing, so Dispatch asks before doing that. Wingman matches can't be joined once they have started.
+</details>
+
+<details>
+<summary><b>Why does Steam show me in Bodycam for a moment?</b></summary>
+
+Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list.
+</details>
 
 ## How it works
 
-- **Server list.** Bodycam servers are Steam lobbies. Dispatch asks Steam for the public lobby list, once per game mode (and per map when maps are picked), because Steam returns at most 50 lobbies per request.
-- **Ping.** Every lobby publishes its host's position on Steam's relay network. Dispatch measures yours once (a few seconds, then reused for two hours) and asks Steam to estimate the round trip to each host. It's an estimate: the game may route differently.
+- **Server list.** Bodycam servers are Steam lobbies. Dispatch asks Steam for the public lobby list once per game mode, and per map when maps are picked, because Steam returns at most 50 lobbies per request.
+- **Ping.** Every lobby publishes its host's position on Steam's relay network, and Steam estimates the round trip from yours.
 - **Isolation.** Each lookup runs in a short-lived copy of Dispatch started in lookup mode. It loads Steam's library from your own Bodycam install (a private copy, so the game's file is only read), lists lobbies and exits. The window itself never talks to Steam.
-- **Joining.** Join and invite links are Steam's own `steam://joinlobby/...` links, the same mechanism as Steam invites. Steam hands the link to the game, and the game joins.
-
-Dispatch never reads or writes the game's memory, files or network traffic, injects nothing and sends no input to the game. It is still an unofficial tool: use it at your own risk.
-
-## Limits
-
-- **No player counts.** Steam doesn't publish them; *Slots* is the server's size. A full server fails to join and the game returns to the menu.
-- **Join from the menu.** Opening a link while Bodycam is closed has failed in testing, so Dispatch asks before launching the game that way.
-- **Steam status.** During a lookup (about a second) Steam shows you as playing Bodycam.
+- **Joining.** Join and invite links are Steam's own `steam://joinlobby/...` links. Steam hands the link to the game, and the game joins.
 
 ## Privacy
 
-Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. It keeps filter and window settings, and your measured relay location, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`. It sends nothing anywhere beyond the Steam requests described above.
+Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. It keeps your filters, window position and measured relay position in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`. It sends nothing anywhere beyond the Steam requests above.
 
-## Build
+## Build from source
 
-Needs the .NET 8 SDK. The output is a single .NET Framework 4.8 executable, a runtime that ships with Windows.
+Needs the [.NET 8 SDK](https://dotnet.microsoft.com/download). The output is a single .NET Framework 4.8 executable.
 
 ```
 dotnet test -c Release
 dotnet publish src -c Release -o artifacts
 ```
 
-## Develop
+`Dispatch.exe --demo` shows invented servers, without Steam, for screenshots.
+
+<details>
+<summary><b>Project layout and quality gates</b></summary>
 
 ```
 src/      the app (WPF): Model/ filters and caching, Steam/ lookup process and locator
 tests/    unit tests (xUnit)
 .config/  hook scripts and scanner settings
+.github/  CI and release workflows, README images
 ```
 
-Quality gates run through [pre-commit](https://pre-commit.com): `pre-commit install` once per clone. They check file hygiene, secrets (gitleaks, detect-secrets), personal data, C# formatting and Conventional Commits, and run the tests before each push. `main` takes merges only. The personal-data check also reads an optional local denylist; see `.config/pii_wordlist.example.txt`.
+Quality gates run through [pre-commit](https://pre-commit.com): run `pre-commit install` once per clone. They check file hygiene, secrets (gitleaks, detect-secrets), personal data, C# formatting, workflow security (actionlint, zizmor) and Conventional Commits, and they run the tests before each push. `main` takes merges only. The personal-data check also reads an optional local denylist; see `.config/pii_wordlist.example.txt`.
+</details>
+
+## Contributing
+
+Issues and pull requests are welcome. Keep changes small and focused, and run `pre-commit install` so the checks run before you push.
 
 ## Releases
 
-Pushing a version tag (`v1.2.3`, matching `<Version>` in `src/Dispatch.csproj`) runs the release workflow on GitHub-hosted runners: it tests, builds, signs (see below) and publishes `Dispatch.exe` with its SHA-256 checksum.
+Pushing a version tag (`v1.2.3`, matching `<Version>` in `src/Dispatch.csproj`) runs the [release workflow](.github/workflows/release.yml) on GitHub-hosted runners. It tests, builds, signs (see below) and publishes `Dispatch.exe` with its SHA-256 checksum.
 
 ## Code signing policy
 
@@ -77,6 +143,4 @@ Signed releases: Free code signing provided by [SignPath.io](https://about.signp
 
 ## License
 
-[MIT](LICENSE).
-
-Dispatch is a fan-made tool, not affiliated with or endorsed by Reissad Studio or Valve. Bodycam and Steam are trademarks of their owners.
+[MIT](LICENSE). Dispatch is a fan-made tool, not affiliated with or endorsed by Reissad Studio or Valve. Bodycam and Steam are trademarks of their owners.

@@ -21,7 +21,8 @@ namespace Dispatch
                 return LookupWorker.Run(args[1]);
             }
 
-            using (var instance = new Mutex(true, InstanceName, out var first))
+            var demo = args.Contains("--demo");
+            using (var instance = new Mutex(true, demo ? InstanceName + ".Demo" : InstanceName, out var first))
             {
                 if (!first)
                 {
@@ -34,7 +35,7 @@ namespace Dispatch
                 {
                     Source = new Uri("pack://application:,,,/Dispatch;component/Theme.xaml"),
                 });
-                return app.Run(new MainWindow());
+                return app.Run(new MainWindow(demo));
             }
         }
 

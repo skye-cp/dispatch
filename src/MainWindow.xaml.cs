@@ -30,7 +30,8 @@ namespace Dispatch
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
-        private readonly Settings settings = Settings.Load();
+        private readonly Settings settings;
+        private readonly bool demo;
         private readonly DispatcherTimer debounce;
         private readonly DispatcherTimer messageTimer;
         private readonly DispatcherTimer clock;
@@ -47,8 +48,11 @@ namespace Dispatch
         private bool quiet;
         private DateTime launchConfirmUntil;
 
-        public MainWindow()
+        /// <param name="demo">Shows invented servers and leaves Steam and saved settings alone (for screenshots).</param>
+        public MainWindow(bool demo = false)
         {
+            this.demo = demo;
+            settings = demo ? new Settings() : Settings.Load();
             InitializeComponent();
 
             debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -92,7 +96,13 @@ namespace Dispatch
                 _ = UpdateAsync(false);
             };
             Activated += (s, e) => CheckClipboard();
-            Closing += (s, e) => SaveSettings();
+            Closing += (s, e) =>
+            {
+                if (!demo)
+                {
+                    SaveSettings();
+                }
+            };
             StateChanged += (s, e) => OnWindowState();
             PreviewKeyDown += OnWindowKey;
         }
@@ -131,6 +141,16 @@ namespace Dispatch
             }
 
             var missing = browser.Missing(DateTime.UtcNow);
+            if (demo)
+            {
+                foreach (var q in missing)
+                {
+                    browser.Store(q, DemoData.For(q, DateTime.UtcNow), DateTime.UtcNow);
+                }
+
+                missing.Clear();
+            }
+
             Render();
             if (missing.Count == 0)
             {
@@ -772,6 +792,12 @@ namespace Dispatch
             if (!(List.SelectedItem is Server s))
             {
                 Say("Select a server first.");
+                return;
+            }
+
+            if (demo)
+            {
+                Say("Demo mode: joining is off.");
                 return;
             }
 
