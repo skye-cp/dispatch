@@ -36,7 +36,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Host search.** Type a host's name to find the server a friend is playing on.
 - **Join, invite, rejoin.** One click to join; invite links put friends in the same server; the **Recent** menu rejoins a host after a disconnect, and shows who is still hosting. Joining also copies the invite link, ready to send (switch it off in the menu).
 - **Auto-refresh.** Optional, every minute while Dispatch is open, with new servers marked; a ring around the refresh button counts down to the next one. Or pull past the top or bottom of the list to refresh.
-- **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites, follows, alerts and errors, and can be muted from the menu.
+- **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites, follows, alerts and errors, and can be switched off with **Interface sounds** in the menu.
 - **Server age and new rounds.** How long each server has been up, and which just changed map: the best moment to join.
 
 ## Requirements
@@ -60,7 +60,7 @@ The toolbar works like a browser's. Refresh and **Auto** sit on the left. Search
 
 - **Bring them to your server.** Select it, press **Copy invite link** and send the link. Your friend opens it with Bodycam running, either by pasting it into Dispatch's search box and pressing <kbd>Enter</kbd>, or by pasting it into <kbd>Win</kbd>+<kbd>R</kbd>.
 - **Go to theirs.** If they host it, it is already at the top, marked **FRIEND**. Otherwise type their server's host name, the name shown in the game's server list, and press <kbd>Enter</kbd>.
-- **Wait for them.** Click the star next to a host's name. While Dispatch is open, it checks every minute and alerts you (a sound and a flashing taskbar button) when that host's server appears.
+- **Wait for them.** Click the star next to a host's name. While Dispatch is open, it checks followed hosts every minute (ten a minute, in turn) and alerts you when that host's server appears: a sound, and a flashing taskbar button if Dispatch is in the background.
 
 ### Shortcuts
 
@@ -129,15 +129,15 @@ Join from Bodycam's main menu: opening a link while the game is closed has faile
 <summary><b>Why does Steam show me in Bodycam for a moment?</b></summary>
 <br>
 
-Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list, which Steam counts as a moment of Bodycam playtime. Auto-refresh and following hosts repeat that once a minute while Dispatch is open.
+Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list, which Steam counts as a moment of Bodycam playtime. Auto-refresh and following hosts repeat that once a minute while Dispatch is open, and opening **Recent** or **Followed hosts** can too. Lookups pause for two minutes after you join a server, so they don't get in the game's way.
 
 </details>
 
 ## How it works
 
-- **Server list.** Bodycam servers are Steam lobbies, and Steam returns at most 50 per request, so Dispatch asks several times: once per game mode, once per mode and map when a few maps are picked, or once per map when many are.
+- **Server list.** Bodycam servers are Steam lobbies, and Steam returns at most 50 per request, so Dispatch asks several times: once per game mode; once per mode and map when maps are picked and that makes 30 requests or fewer; beyond that, once per map (every mode but Training) when no mode is picked, or once per mode with maps filtered on screen when modes are.
 - **Ping.** Every lobby publishes its host's position on Steam's relay network, and Steam estimates the round trip from yours.
-- **Isolation.** Each lookup runs in a short-lived copy of Dispatch started in lookup mode. It loads Steam's library from your own Bodycam install (a private copy, so the game's file is only read), lists lobbies and exits. The window itself never talks to Steam.
+- **Isolation.** Each lookup runs in a short-lived copy of Dispatch started in lookup mode. It loads Steam's library from your own Bodycam install (a private copy, so the game's file is only read), lists lobbies and exits. The window itself never loads Steam's library.
 - **Joining.** Join and invite links are Steam's own `steam://joinlobby/...` links. Steam hands the link to the game, and the game joins.
 
 ## Privacy
@@ -157,7 +157,7 @@ artifacts/Dispatch.exe --demo               # invented servers, no Steam (for sc
 ```
 
 ```
-src/      the app (WPF): Model/ filters and caching, Steam/ lookup process and locator
+src/      the app (WPF): Model/ filters, query plan, host status, settings and HTTP (no UI); Steam/ lookup process and locator
 tests/    unit tests (xUnit)
 .config/  hook scripts and scanner settings
 .github/  CI and release workflows, README images

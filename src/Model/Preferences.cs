@@ -68,7 +68,7 @@ namespace Dispatch.Model
                 filters.Maps.Add(v);
             }
 
-            foreach (var v in s.GetList(Keys.Bots))
+            foreach (var v in s.GetList(Keys.Bots).Select(b => b.ToLowerInvariant()).Where(b => b == "true" || b == "false"))
             {
                 filters.Bots.Add(v);
             }

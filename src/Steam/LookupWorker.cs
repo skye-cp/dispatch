@@ -59,7 +59,11 @@ namespace Dispatch.Steam
             Environment.SetEnvironmentVariable("SteamAppId", Catalog.AppId);
             Environment.SetEnvironmentVariable("SteamGameId", Catalog.AppId);
 
-            if (LoadLibraryW(steamApiPath) == IntPtr.Zero)
+            // The child loads nothing but Dispatch's own copy of Steam's library, and resolves its dependencies only from
+            // that folder and System32, so a planted file elsewhere (the Downloads folder, the working directory) is ignored.
+            var expected = Path.Combine(GameLocator.CacheFolder, GameLocator.LibraryName);
+            if (!string.Equals(Path.GetFullPath(steamApiPath), Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase) ||
+                LoadLibraryExW(expected, IntPtr.Zero, LoadLibrarySearchDllLoadDir | LoadLibrarySearchSystem32) == IntPtr.Zero)
             {
                 output.WriteLine(Protocol.EncodeError("library", "Could not load Steam's library from the game folder."));
                 return 2;
@@ -219,7 +223,7 @@ namespace Dispatch.Steam
                     Limit = SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit(matchmaking, lobby),
                     Ping = ping.Estimate(lobby, pingData),
                 };
-                // The owner ID is lobby data the host sets, and it ends up in the join link, so only a SteamID passes.
+                // Host-set data: see Server.IsSteamId.
                 if (Server.IsSteamId(server.Owner))
                 {
                     output.WriteLine(Protocol.EncodeServer(index, server));

@@ -69,7 +69,7 @@ namespace Dispatch.Model
         }
 
         /// <summary>
-        /// Every mode except Training on one map. Used when maps are picked but modes aren't: one request per map
+        /// Every mode except Training on one map. Used when maps are picked without a mode and per-mode-and-map requests would exceed <see cref="QueryPlanner.MaxQueries"/>: one request per map
         /// reaches far more of that map's servers than per-mode requests filtered on screen (50 against 14 for one
         /// map in a live test, November 2026), and Steam honours the "not Training" filter.
         /// </summary>

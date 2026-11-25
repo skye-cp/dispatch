@@ -25,8 +25,11 @@ namespace Dispatch
                 }
                 catch (Exception e)
                 {
-                    Console.Out.WriteLine(Protocol.EncodeError("crash", "The Steam lookup failed: " + e.Message));
-                    Console.Out.Flush();
+                    using (var output = new System.IO.StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { NewLine = "\n" })
+                    {
+                        output.WriteLine(Protocol.EncodeError("crash", "The Steam lookup failed: " + e.Message));
+                    }
+
                     return 5;
                 }
             }

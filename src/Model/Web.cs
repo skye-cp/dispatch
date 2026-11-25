@@ -9,6 +9,10 @@ namespace Dispatch.Model
     {
         private const int TimeoutMs = 6000;
 
+        // The answers are a few hundred bytes; anything far bigger or slower is not the API answering.
+        private const int MaxChars = 1 << 20;
+        private const int DeadlineMs = 10000;
+
         /// <summary>The response body, or null on any network failure, so callers degrade quietly.</summary>
         public static Task<string> GetTextAsync(string url, string userAgent, string accept = null) => Task.Run(() =>
         {
@@ -24,10 +28,23 @@ namespace Dispatch.Model
 
                 request.Timeout = TimeoutMs;
                 request.ReadWriteTimeout = TimeoutMs;
+                using (new System.Threading.Timer(_ => request.Abort(), null, DeadlineMs, System.Threading.Timeout.Infinite))
                 using (var response = (HttpWebResponse)request.GetResponse())
                 using (var reader = new StreamReader(response.GetResponseStream()))
                 {
-                    return reader.ReadToEnd();
+                    var text = new System.Text.StringBuilder();
+                    var buffer = new char[8192];
+                    int n;
+                    while ((n = reader.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        text.Append(buffer, 0, n);
+                        if (text.Length > MaxChars)
+                        {
+                            return null;
+                        }
+                    }
+
+                    return text.ToString();
                 }
             }
             catch (WebException)

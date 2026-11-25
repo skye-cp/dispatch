@@ -15,7 +15,7 @@ namespace Dispatch.Steam
     /// </summary>
     internal static class GameLocator
     {
-        private const string LibraryName = "steam_api64.dll";
+        public const string LibraryName = "steam_api64.dll";
 
         private static readonly Regex PathEntry = new Regex("\"path\"\\s+\"(?<p>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.CultureInvariant);
         private static readonly Regex OldLibraryEntry = new Regex("\"\\d+\"\\s+\"(?<p>[A-Za-z]:(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.CultureInvariant);
@@ -31,6 +31,7 @@ namespace Dispatch.Steam
             {
                 var source = FindSteamApi();
                 Directory.CreateDirectory(CacheFolder);
+                RemoveLeftovers();
                 var target = Path.Combine(CacheFolder, LibraryName);
                 var src = new FileInfo(source);
                 var dst = new FileInfo(target);
@@ -55,6 +56,28 @@ namespace Dispatch.Steam
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.Security.SecurityException)
             {
                 throw new LocatorException("Could not prepare Steam's library from the game folder: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Replacing a copy that a lookup still has loaded leaves the old file renamed beside it (and a failed copy can
+        /// leave a .tmp): delete those once nothing holds them.
+        /// </summary>
+        private static void RemoveLeftovers()
+        {
+            foreach (var pattern in new[] { LibraryName + "~RF*.TMP", LibraryName + ".tmp" })
+            {
+                foreach (var file in Directory.GetFiles(CacheFolder, pattern))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                    }
+                    catch (Exception e) when (e is UnauthorizedAccessException || e is IOException)
+                    {
+                        // Still loaded somewhere; the next start tries again.
+                    }
+                }
             }
         }
 
@@ -135,27 +158,43 @@ namespace Dispatch.Steam
 
         private static string Unescape(string value) => value.Replace("\\\\", "\\").Replace("\\\"", "\"");
 
-        private static string SafeFind(string folder)
+        private static string SafeFind(string folder) => Directory.Exists(folder) ? PickLibrary(FindAll(folder)) : null;
+
+        /// <summary>Every copy under the folder. A subfolder that can't be read is skipped, so it can't hide copies elsewhere.</summary>
+        private static IEnumerable<string> FindAll(string folder)
         {
-            try
+            var pending = new Stack<string>();
+            pending.Push(folder);
+            while (pending.Count > 0)
             {
-                return Directory.Exists(folder)
-                    ? PickLibrary(Directory.EnumerateFiles(folder, LibraryName, SearchOption.AllDirectories))
-                    : null;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return null;
-            }
-            catch (IOException)
-            {
-                return null;
+                var dir = pending.Pop();
+                string[] files, subdirs;
+                try
+                {
+                    files = Directory.GetFiles(dir, LibraryName);
+                    subdirs = Directory.GetDirectories(dir);
+                }
+                catch (Exception e) when (e is UnauthorizedAccessException || e is IOException)
+                {
+                    continue;
+                }
+
+                foreach (var f in files)
+                {
+                    yield return f;
+                }
+
+                foreach (var d in subdirs)
+                {
+                    pending.Push(d);
+                }
             }
         }
 
         /// <summary>
-        /// Of several copies, the newest Steamworks build: an older one bundled elsewhere in the game folder may lack
-        /// the API Dispatch calls. (Bodycam ships one copy, inside its Steam plugin's ThirdParty folder.)
+        /// Of several copies found in one folder search, the newest Steamworks build: file order is undefined, so "first
+        /// found" could pick a stale copy that lacks the API Dispatch calls, and versions don't depend on folder layout.
+        /// Bodycam currently ships one copy, in its Steam plugin's ThirdParty folder.
         /// </summary>
         private static string PickLibrary(IEnumerable<string> paths) =>
             PickNewest(paths.Select(p => (p, FileVersionInfo.GetVersionInfo(p).FileVersion)));

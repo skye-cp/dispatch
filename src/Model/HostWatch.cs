@@ -10,7 +10,11 @@ namespace Dispatch.Model
     /// </summary>
     internal sealed class HostWatch
     {
-        /// <summary>A host check is trusted this long: a bit over two watch intervals, so a watched host is never "unknown".</summary>
+        /// <summary>
+        /// A host check is trusted for two watch intervals: with up to <see cref="MaxChecks"/> followed hosts each is
+        /// rechecked every minute, so one skipped watch (Dispatch busy refreshing) doesn't turn a status unknown.
+        /// Longer lists rotate more slowly, and between checks the current list answers.
+        /// </summary>
         public static readonly TimeSpan CheckFor = TimeSpan.FromMinutes(2);
 
         /// <summary>A followed host must be gone this long before coming back alerts again, so a map change or a quick re-host stays quiet.</summary>
@@ -36,7 +40,10 @@ namespace Dispatch.Model
                 .Take(MaxChecks)
                 .ToList();
 
-        /// <summary>Records a check: the hosts asked about, and the servers found for them.</summary>
+        /// <summary>
+        /// Records a check: the hosts whose request Steam answered, and the servers found for them. A host whose request
+        /// failed must not be passed in: no answer is not the same as "not hosting".
+        /// </summary>
         public void Record(IEnumerable<string> asked, IReadOnlyDictionary<string, Server> answers, DateTime nowUtc)
         {
             foreach (var owner in asked)
@@ -57,23 +64,32 @@ namespace Dispatch.Model
         private bool CheckedRecently(string owner, DateTime nowUtc) =>
             checkedUtc.TryGetValue(owner, out var at) && nowUtc - at < CheckFor;
 
-        /// <summary>The host's server if known to be up: a recent check wins, else the current list answers.</summary>
+        /// <summary>
+        /// The host's server if known to be up: the newer of a recent check and the current list, so a host who
+        /// re-hosts just after a check found them away shows up as soon as the list does.
+        /// </summary>
         public Server HostingNow(string owner, IEnumerable<Server> current, DateTime nowUtc)
         {
-            if (CheckedRecently(owner, nowUtc))
+            var listed = current.FirstOrDefault(s => s.Owner == owner);
+            if (!CheckedRecently(owner, nowUtc))
             {
-                return found.TryGetValue(owner, out var s) ? s : null;
+                return listed;
             }
 
-            return current.FirstOrDefault(s => s.Owner == owner);
+            if (found.TryGetValue(owner, out var s))
+            {
+                return s;
+            }
+
+            return listed != null && listed.SeenUtc > checkedUtc[owner] ? listed : null;
         }
 
-        public bool KnownNotHosting(string owner, DateTime nowUtc) =>
-            CheckedRecently(owner, nowUtc) && !found.ContainsKey(owner);
+        public bool KnownNotHosting(string owner, IEnumerable<Server> current, DateTime nowUtc) =>
+            CheckedRecently(owner, nowUtc) && HostingNow(owner, current, nowUtc) == null;
 
         /// <summary>True when nothing recent says whether the host is up.</summary>
         public bool NeedsCheck(string owner, IEnumerable<Server> current, DateTime nowUtc) =>
-            HostingNow(owner, current, nowUtc) == null && !KnownNotHosting(owner, nowUtc);
+            HostingNow(owner, current, nowUtc) == null && !KnownNotHosting(owner, current, nowUtc);
 
         /// <summary>Servers known to be up right now: the current list answers plus recent checks.</summary>
         public List<Server> Online(IEnumerable<Server> current, DateTime nowUtc) =>
@@ -84,7 +100,7 @@ namespace Dispatch.Model
         {
             var s = HostingNow(owner, current, nowUtc);
             return s != null ? "Hosting now  ·  " + s.Mode + " · " + s.MapName
-                : KnownNotHosting(owner, nowUtc) ? "Not hosting now"
+                : KnownNotHosting(owner, current, nowUtc) ? "Not hosting now"
                 : fallback;
         }
 
@@ -96,16 +112,17 @@ namespace Dispatch.Model
         }
 
         /// <summary>
-        /// Followed hosts whose server counts as appearing: gone for a while since last seen, or found away by a
-        /// check. A host simply noticed for the first time (online at start, or outside the filters) doesn't count.
-        /// Marks every online followed host as seen.
+        /// Followed hosts whose server counts as appearing. Only an absence a check actually observed counts: a host
+        /// simply not mentioned for a while (a long follow list rotates slowly through checks, a list answer leaves them
+        /// out) has not left. A host found away alerts when they host again, unless they were seen within
+        /// <see cref="GoneAfter"/> (a quick re-host). A host noticed for the first time (online at start, or outside
+        /// the filters) doesn't alert. Marks every online followed host as seen.
         /// </summary>
         public List<Server> Appeared(IEnumerable<Server> online, Func<string, bool> followed, DateTime nowUtc)
         {
             var hosts = online.Where(s => followed(s.Owner)).GroupBy(s => s.Owner).Select(g => g.First()).ToList();
-            var appeared = hosts.Where(s => seenUtc.TryGetValue(s.Owner, out var last)
-                ? nowUtc - last > GoneAfter
-                : away.Contains(s.Owner)).ToList();
+            var appeared = hosts.Where(s => away.Contains(s.Owner) &&
+                (!seenUtc.TryGetValue(s.Owner, out var last) || nowUtc - last > GoneAfter)).ToList();
             foreach (var s in hosts)
             {
                 MarkSeen(s.Owner, nowUtc);

@@ -22,7 +22,7 @@ namespace Dispatch.Tests
             var filters = new FilterState { MaxPing = 100, AgeLimit = -30 };
             filters.Modes.Add("Zombie");
             filters.Maps.Add("Asylum");
-            filters.Bots.Add("On");
+            filters.Bots.Add("true");
             filters.Regions.Add("gru");
             var follows = new FollowList();
             follows.Toggle("200000000001", "Graveyard Watch");
@@ -56,7 +56,7 @@ namespace Dispatch.Tests
 
             Assert.Equal(new[] { "Zombie" }, filters2.Modes);
             Assert.Equal(new[] { "Asylum" }, filters2.Maps);
-            Assert.Equal(new[] { "On" }, filters2.Bots);
+            Assert.Equal(new[] { "true" }, filters2.Bots);
             Assert.Equal(new[] { "gru" }, filters2.Regions);
             Assert.Equal(100, filters2.MaxPing);
             Assert.Equal(-30, filters2.AgeLimit);

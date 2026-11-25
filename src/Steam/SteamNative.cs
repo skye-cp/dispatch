@@ -18,8 +18,11 @@ namespace Dispatch.Steam
 
         private const string Lib = "steam_api64";
 
+        public const uint LoadLibrarySearchDllLoadDir = 0x00000100;
+        public const uint LoadLibrarySearchSystem32 = 0x00000800;
+
         [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
-        public static extern IntPtr LoadLibraryW(string path);
+        public static extern IntPtr LoadLibraryExW(string path, IntPtr reserved, uint flags);
 
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
         public static extern int SteamAPI_InitFlat(byte[] errorMessage);

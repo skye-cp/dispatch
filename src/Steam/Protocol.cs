@@ -124,7 +124,11 @@ namespace Dispatch.Steam
 
         public static string[] Split(string line) => line.Split(FieldSep);
 
-        /// <summary>Removes control characters so a field can never break the record format.</summary>
+        /// <summary>
+        /// Replaces control characters, so a field can never break the record format, and invisible format
+        /// characters (line and paragraph separators, bidi overrides), so a host's name can't reorder or break the
+        /// sentences it appears in. Emoji joiners and variation selectors stay.
+        /// </summary>
         public static string Clean(string value)
         {
             if (string.IsNullOrEmpty(value))
@@ -135,10 +139,26 @@ namespace Dispatch.Steam
             var sb = new StringBuilder(value.Length);
             foreach (var ch in value)
             {
-                sb.Append(char.IsControl(ch) ? ' ' : ch);
+                sb.Append(Unsafe(ch) ? ' ' : ch);
             }
 
             return sb.ToString();
+        }
+
+        private static bool Unsafe(char ch)
+        {
+            if (char.IsControl(ch))
+            {
+                return true;
+            }
+
+            if (ch == '\u200D' || (ch >= '\uFE00' && ch <= '\uFE0F'))
+            {
+                return false;
+            }
+
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            return category == UnicodeCategory.Format || category == UnicodeCategory.LineSeparator || category == UnicodeCategory.ParagraphSeparator;
         }
 
         private static string Join(params string[] fields) => string.Join(FieldSep.ToString(), fields.Select(Clean));
