@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -692,47 +693,130 @@ namespace Dispatch
                 : "Refresh from Steam (F5), or scroll on past the top or bottom of the list.";
         }
 
-        private readonly Dictionary<UIElement, DateTime> menuClosedUtc = new Dictionary<UIElement, DateTime>();
-        private readonly Dictionary<UIElement, ContextMenu> openMenus = new Dictionary<UIElement, ContextMenu>();
-
-        /// <summary>A toolbar menu that opens below its button, right edges aligned, so it stays inside the window.</summary>
-        private ContextMenu NewMenu(UIElement anchor)
-        {
-            var menu = new ContextMenu
-            {
-                PlacementTarget = anchor,
-                Placement = PlacementMode.Custom,
-                CustomPopupPlacementCallback = (popup, target, offset) => new[]
-                {
-                    new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
-                },
-            };
-            menu.Closed += (s, e) => menuClosedUtc[anchor] = DateTime.UtcNow;
-            openMenus[anchor] = menu;
-            return menu;
-        }
+        // Toolbar menus are popups, like the filter dropdowns, so a second click on their button closes them.
+        private readonly Dictionary<UIElement, Popup> menus = new Dictionary<UIElement, Popup>();
+        private readonly Dictionary<Popup, DateTime> menuClosedUtc = new Dictionary<Popup, DateTime>();
 
         /// <summary>
-        /// Clicking a button whose menu is open closes the menu instead of opening a new one. Depending on timing, the
-        /// click arrives while the menu is still open, or just after the outside click has closed it; both count.
+        /// Opens the menu under this button and returns its empty panel to fill, or returns null when the click
+        /// should close it instead: the menu is open, or the same click has just dismissed it.
         /// </summary>
-        private bool MenuJustClosed(UIElement anchor)
+        private StackPanel BeginMenu(UIElement anchor)
         {
-            if (openMenus.TryGetValue(anchor, out var open) && open.IsOpen)
+            if (!menus.TryGetValue(anchor, out var popup))
             {
-                open.IsOpen = false;
-                return true;
+                popup = new Popup
+                {
+                    PlacementTarget = anchor,
+                    Placement = PlacementMode.Custom,
+                    StaysOpen = false,
+                    AllowsTransparency = true,
+                    CustomPopupPlacementCallback = (size, target, offset) => new[]
+                    {
+                        new CustomPopupPlacement(new Point(target.Width - size.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
+                    },
+                    Child = new Border
+                    {
+                        Background = (Brush)FindResource("SurfaceBrush"),
+                        BorderBrush = (Brush)FindResource("LineStrongBrush"),
+                        BorderThickness = new Thickness(1),
+                        Padding = new Thickness(0, 4, 0, 4),
+                        MinWidth = 220,
+                        Child = new StackPanel(),
+                    },
+                };
+                // Popups sit outside the window's tree, so the menu sets the window's font itself.
+                TextElement.SetFontFamily(popup.Child, (FontFamily)FindResource("UiFont"));
+                TextElement.SetFontSize(popup.Child, 14);
+                TextElement.SetForeground(popup.Child, (Brush)FindResource("TextBrush"));
+                TextOptions.SetTextFormattingMode(popup.Child, TextFormattingMode.Display);
+                var closing = popup;
+                popup.Closed += (s, e) => menuClosedUtc[closing] = DateTime.UtcNow;
+                menus[anchor] = popup;
             }
 
-            return menuClosedUtc.TryGetValue(anchor, out var at) && DateTime.UtcNow - at < TimeSpan.FromMilliseconds(300);
+            if (popup.IsOpen)
+            {
+                popup.IsOpen = false;
+                return null;
+            }
+
+            if (menuClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            {
+                return null;
+            }
+
+            var panel = (StackPanel)((Border)popup.Child).Child;
+            panel.Children.Clear();
+            return panel;
         }
 
-        private MenuItem MenuTitle(string text, string note = null) => new MenuItem
+        private void ShowMenu(UIElement anchor)
         {
-            Header = new TextBlock { Text = text, FontFamily = (FontFamily)FindResource("HeadFont"), FontSize = 12, Foreground = (Brush)FindResource("TextDimBrush") },
-            InputGestureText = note ?? "",
-            IsEnabled = false,
-        };
+            var popup = menus[anchor];
+            popup.IsOpen = true;
+            Motion.Fade(popup.Child, 0, 1, 140);
+            Motion.SlideFrom(popup.Child, -6, 160);
+        }
+
+        private bool MenuOpen(UIElement anchor) => menus.TryGetValue(anchor, out var p) && p.IsOpen;
+
+        private void CloseMenus()
+        {
+            foreach (var p in menus.Values)
+            {
+                p.IsOpen = false;
+            }
+        }
+
+        /// <summary>One menu line: an optional check column, the content, and a dim note on the right.</summary>
+        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            if (check != null)
+            {
+                grid.Children.Add(new TextBlock
+                {
+                    Text = "\uE73E",
+                    FontFamily = (FontFamily)FindResource("IconFont"),
+                    FontSize = 11,
+                    Width = 22,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Visibility = check == true ? Visibility.Visible : Visibility.Hidden,
+                });
+            }
+
+            var body = new ContentControl { Content = content, VerticalAlignment = VerticalAlignment.Center, IsTabStop = false };
+            Grid.SetColumn(body, 1);
+            grid.Children.Add(body);
+            if (!string.IsNullOrEmpty(note))
+            {
+                var gesture = new TextBlock { Text = note, Margin = new Thickness(24, 0, 0, 0), Opacity = 0.55, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(gesture, 2);
+                grid.Children.Add(gesture);
+            }
+
+            var row = new Button { Style = (Style)FindResource("MenuRow"), Content = grid, IsEnabled = enabled };
+            row.Click += (s, e) =>
+            {
+                menus[anchor].IsOpen = false;
+                click?.Invoke();
+            };
+            return row;
+        }
+
+        private UIElement MenuTitle(string text, string note = null)
+        {
+            var grid = new Grid { Margin = new Thickness(14, 6, 14, 6) };
+            grid.Children.Add(new TextBlock { Text = text, FontFamily = (FontFamily)FindResource("HeadFont"), FontSize = 12, Foreground = (Brush)FindResource("TextDimBrush") });
+            grid.Children.Add(new TextBlock { Text = note ?? "", FontSize = 12, Foreground = (Brush)FindResource("TextFaintBrush"), HorizontalAlignment = HorizontalAlignment.Right });
+            return grid;
+        }
+
+        private UIElement MenuSeparator() => new Border { Height = 1, Margin = new Thickness(0, 4, 0, 4), Background = (Brush)FindResource("LineBrush") };
 
         /// <summary>A menu entry with a name and a dimmer detail line; a green dot marks a host who is hosting now.</summary>
         private object TwoLine(string name, string detail, bool live)
@@ -743,13 +827,12 @@ namespace Dispatch
                 line.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = (Brush)FindResource("GoodBrush"), Margin = new Thickness(0, 1, 6, 0), VerticalAlignment = VerticalAlignment.Center });
             }
 
-            line.Children.Add(new TextBlock { Text = detail, FontSize = 12, Foreground = (Brush)FindResource("TextDimBrush") });
+            line.Children.Add(new TextBlock { Text = detail, FontSize = 12, Opacity = 0.65 });
             var panel = new StackPanel();
             panel.Children.Add(new TextBlock { Text = name });
             panel.Children.Add(line);
             return panel;
         }
-
         /// <summary>The host's current server if known: from a recent check, the list, or the follow watch.</summary>
         private Server HostingNow(string owner)
         {
@@ -821,107 +904,97 @@ namespace Dispatch
                 : fallback;
         }
 
-        private void OnRecent(object sender, RoutedEventArgs e)
-        {
-            if (!MenuJustClosed(RecentButton))
-            {
-                ShowRecent();
-            }
-        }
+        private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
 
         /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
         private async void ShowRecent()
         {
-            var menu = NewMenu(RecentButton);
+            var panel = BeginMenu(RecentButton);
+            if (panel == null)
+            {
+                return;
+            }
+
             var checking = recent.Items.Any(r => NeedsCheck(r.Owner)) && !demo;
             void Fill()
             {
-                menu.Items.Clear();
-                menu.Items.Add(MenuTitle("RECENT SERVERS", checking ? "checking…" : null));
+                panel.Children.Clear();
+                panel.Children.Add(MenuTitle("RECENT SERVERS", checking ? "checking…" : null));
                 if (recent.Items.Count == 0)
                 {
-                    menu.Items.Add(new MenuItem { Header = "Servers you join appear here.", IsEnabled = false });
+                    panel.Children.Add(MenuRow(RecentButton, "Servers you join appear here.", null, enabled: false));
                 }
 
                 foreach (var r in recent.Items)
                 {
                     var off = KnownNotHosting(r.Owner);
-                    var item = new MenuItem
-                    {
-                        Header = TwoLine(r.Name, HostDetail(r.Owner, r.Mode + " · " + Catalog.MapName(r.Map)), HostingNow(r.Owner) != null),
-                        InputGestureText = "joined " + Ago(DateTime.UtcNow - r.JoinedUtc),
-                        Opacity = off ? 0.5 : 1,
-                        ToolTip = off ? "Not hosting right now" : "Join " + r.Name + "'s server",
-                    };
                     var entry = r;
-                    item.Click += (o, a) => _ = RejoinAsync(entry);
-                    menu.Items.Add(item);
+                    var row = MenuRow(RecentButton, TwoLine(r.Name, HostDetail(r.Owner, r.Mode + " · " + Catalog.MapName(r.Map)), HostingNow(r.Owner) != null),
+                        () => _ = RejoinAsync(entry), "joined " + Ago(DateTime.UtcNow - r.JoinedUtc));
+                    row.Opacity = off ? 0.5 : 1;
+                    row.ToolTip = off ? "Not hosting right now" : "Join " + r.Name + "'s server";
+                    panel.Children.Add(row);
                 }
             }
 
             Fill();
-            menu.IsOpen = true;
+            ShowMenu(RecentButton);
             if (checking)
             {
                 await CheckHostsAsync(recent.Items.Select(r => r.Owner).Where(NeedsCheck));
                 checking = false;
-                if (menu.IsOpen)
+                if (MenuOpen(RecentButton))
                 {
                     Fill();
                 }
             }
         }
 
-        private void OnFollowing(object sender, RoutedEventArgs e)
-        {
-            if (!MenuJustClosed(FollowingButton))
-            {
-                ShowFollowing();
-            }
-        }
+        private void OnFollowing(object sender, RoutedEventArgs e) => ShowFollowing();
 
         /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
         private async void ShowFollowing()
         {
-            var menu = NewMenu(FollowingButton);
+            var panel = BeginMenu(FollowingButton);
+            if (panel == null)
+            {
+                return;
+            }
+
             var checking = follows.Hosts.Any(h => NeedsCheck(h.Owner)) && !demo;
             void Fill()
             {
-                menu.Items.Clear();
-                menu.Items.Add(MenuTitle("FOLLOWED HOSTS", checking ? "checking…" : null));
+                panel.Children.Clear();
+                panel.Children.Add(MenuTitle("FOLLOWED HOSTS", checking ? "checking…" : null));
                 if (follows.Hosts.Count == 0)
                 {
-                    menu.Items.Add(new MenuItem { Header = "Follow a host with the star on their row, or Ctrl+D.", IsEnabled = false });
+                    panel.Children.Add(MenuRow(FollowingButton, "Follow a host with the star on their row, or Ctrl+D.", null, enabled: false));
                 }
 
                 foreach (var h in follows.Hosts.OrderBy(h => HostingNow(h.Owner) == null).ThenBy(h => h.Name, StringComparer.CurrentCultureIgnoreCase))
                 {
                     var off = KnownNotHosting(h.Owner);
-                    var item = new MenuItem
-                    {
-                        Header = TwoLine(h.Name, HostDetail(h.Owner, demo ? "Not hosting now" : "Checking…"), HostingNow(h.Owner) != null),
-                        Opacity = off ? 0.5 : 1,
-                        ToolTip = off ? "Dispatch alerts you when they host" : "Show their server",
-                    };
                     var host = h;
-                    item.Click += (o, a) => GoToHost(host);
-                    menu.Items.Add(item);
+                    var row = MenuRow(FollowingButton, TwoLine(h.Name, HostDetail(h.Owner, demo ? "Not hosting now" : "Checking…"), HostingNow(h.Owner) != null),
+                        () => GoToHost(host));
+                    row.Opacity = off ? 0.5 : 1;
+                    row.ToolTip = off ? "Dispatch alerts you when they host" : "Show their server";
+                    panel.Children.Add(row);
                 }
             }
 
             Fill();
-            menu.IsOpen = true;
+            ShowMenu(FollowingButton);
             if (checking)
             {
                 await CheckHostsAsync(follows.Hosts.Select(h => h.Owner).Where(NeedsCheck));
                 checking = false;
-                if (menu.IsOpen)
+                if (MenuOpen(FollowingButton))
                 {
                     Fill();
                 }
             }
         }
-
         /// <summary>Selects the host's server in the list, or searches every server for it when filters hide it.</summary>
         private void GoToHost(FollowedHost host)
         {
@@ -957,39 +1030,30 @@ namespace Dispatch
 
         private void OnMenu(object sender, RoutedEventArgs e)
         {
-            if (MenuJustClosed(MenuButton))
+            var panel = BeginMenu(MenuButton);
+            if (panel == null)
             {
                 return;
             }
 
-            var menu = NewMenu(MenuButton);
-            var sound = new MenuItem { Header = "Interface sounds", IsCheckable = true, IsChecked = sounds.Enabled };
-            sound.Click += (o, a) =>
+            panel.Children.Add(MenuRow(MenuButton, "Interface sounds", () =>
             {
-                sounds.Enabled = sound.IsChecked;
+                sounds.Enabled = !sounds.Enabled;
                 QueueSave();
                 sounds.Play(Cue.Copy);
                 Say(sounds.Enabled ? "Interface sounds on." : "Interface sounds muted. Alerts for followed hosts still flash the taskbar.");
-            };
-            var copy = new MenuItem { Header = "Copy invite link when joining", IsCheckable = true, IsChecked = copyOnJoin };
-            copy.Click += (o, a) =>
+            }, check: sounds.Enabled));
+            panel.Children.Add(MenuRow(MenuButton, "Copy invite link when joining", () =>
             {
-                copyOnJoin = copy.IsChecked;
+                copyOnJoin = !copyOnJoin;
                 QueueSave();
                 Say(copyOnJoin ? "Joining a server also copies its invite link, ready to send to friends." : "Joining no longer copies the invite link.");
-            };
-            var update = new MenuItem { Header = "Check for updates" };
-            update.Click += (o, a) => _ = CheckForUpdateAsync(true);
-            var about = new MenuItem { Header = "About Dispatch", InputGestureText = VersionText.Text };
-            about.Click += (o, a) => Open("https://github.com/skye-cp/dispatch");
-            menu.Items.Add(sound);
-            menu.Items.Add(copy);
-            menu.Items.Add(new Separator());
-            menu.Items.Add(update);
-            menu.Items.Add(about);
-            menu.IsOpen = true;
+            }, check: copyOnJoin));
+            panel.Children.Add(MenuSeparator());
+            panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), check: false));
+            panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open("https://github.com/skye-cp/dispatch"), VersionText.Text, check: false));
+            ShowMenu(MenuButton);
         }
-
         /// <summary>Copies the joined server's link when that setting is on; returns the note for the status line.</summary>
         private string CopyOnJoin(string link)
         {
@@ -2298,10 +2362,11 @@ namespace Dispatch
         {
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            if (e.Key == Key.Escape && new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup }.Any(p => p.IsOpen))
+            if (e.Key == Key.Escape && (new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup }.Any(p => p.IsOpen) || menus.Values.Any(p => p.IsOpen)))
             {
                 e.Handled = true;
                 CloseFilterPopups();
+                CloseMenus();
             }
             else if (e.Key == Key.F5 || (ctrl && !shift && e.Key == Key.R))
             {
