@@ -799,7 +799,7 @@ namespace Dispatch
         }
 
         /// <summary>One menu line: a check column for a setting (or an empty one to line up with settings), the content, and a dim note on the right.</summary>
-        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true, bool alignWithChecks = false)
+        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true, bool alignWithChecks = false, bool keepOpen = false)
         {
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -835,7 +835,7 @@ namespace Dispatch
             AutomationProperties.SetName(row, check == null ? text : text + (check == true ? ", on" : ", off"));
             row.Click += (s, e) =>
             {
-                menus[anchor].IsOpen = false;
+                menus[anchor].IsOpen = keepOpen;
                 click?.Invoke();
             };
             return row;
@@ -1087,9 +1087,63 @@ namespace Dispatch
                 Say(copyOnJoin ? "Joining a server also copies its invite link, ready to send to friends." : "Joining no longer copies the invite link.");
             }, check: copyOnJoin));
             panel.Children.Add(MenuSeparator());
+            panel.Children.Add(MenuRow(MenuButton, "Keyboard shortcuts", () =>
+            {
+                // The clicked row is about to go: leave focus on the menu button, so Esc still closes the list.
+                MenuButton.Focus();
+                FillShortcuts(panel);
+            }, "F1", alignWithChecks: true, keepOpen: true));
             panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), alignWithChecks: true));
             panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open(UpdateCheck.RepositoryUrl), VersionText.Text, alignWithChecks: true));
             ShowMenu(MenuButton);
+        }
+
+        private static readonly (string Action, string Keys)[] Shortcuts =
+        {
+            ("Join the selected server", "Enter, double-click"),
+            ("Copy its invite link", "Ctrl+C"),
+            ("Join the link on the clipboard", "Ctrl+Shift+V"),
+            ("Search host names, or paste a link", "Ctrl+F, Ctrl+L"),
+            ("Search every server for that name", "Enter in search"),
+            ("Follow or unfollow the selected host", "Ctrl+D"),
+            ("Recent servers", "Ctrl+H"),
+            ("Refresh", "F5, Ctrl+R"),
+            ("Clear the search, or close a menu", "Esc"),
+            ("Keyboard shortcuts", "F1"),
+        };
+
+        /// <summary>F1: the shortcut list, in the menu's popup; pressed again, it closes.</summary>
+        private void ToggleShortcuts()
+        {
+            var panel = BeginMenu(MenuButton);
+            if (panel != null)
+            {
+                FillShortcuts(panel);
+                ShowMenu(MenuButton);
+            }
+        }
+
+        /// <summary>Replaces the menu's contents with the shortcut list; the popup stays where it is.</summary>
+        private void FillShortcuts(StackPanel panel)
+        {
+            panel.Children.Clear();
+            panel.Children.Add(MenuTitle("KEYBOARD SHORTCUTS"));
+            foreach (var (action, keys) in Shortcuts)
+            {
+                var line = new Grid { Margin = new Thickness(14, 4, 14, 4) };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.Children.Add(new TextBlock { Text = action, FontSize = 14 });
+                var gesture = new TextBlock { Text = keys, FontSize = 13, Margin = new Thickness(24, 0, 0, 0), Opacity = 0.55, HorizontalAlignment = HorizontalAlignment.Right };
+                Grid.SetColumn(gesture, 1);
+                line.Children.Add(gesture);
+                panel.Children.Add(line);
+            }
+
+            if (panel.Parent is FrameworkElement frame)
+            {
+                Motion.Fade(frame, 0, 1, 140);
+            }
         }
         /// <summary>Copies the joined server's link when that setting is on; returns the note for the status line.</summary>
         private string CopyOnJoin(string link)
@@ -2282,6 +2336,11 @@ namespace Dispatch
             {
                 e.Handled = true;
                 OnRecent(sender, e);
+            }
+            else if (e.Key == Key.F1)
+            {
+                e.Handled = true;
+                ToggleShortcuts();
             }
             else if (ctrl && e.Key == Key.D && List.SelectedItem is Server picked)
             {

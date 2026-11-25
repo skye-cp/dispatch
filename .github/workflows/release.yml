@@ -1,6 +1,6 @@
 # Builds, tests and publishes a release when a version tag (v1.2.3) is pushed.
 # Signing through SignPath runs once the repository variable SIGNPATH_ORGANIZATION_ID is set;
-# until then the release is published unsigned. See "Code signing policy" in the README.
+# until then the release is published unsigned. SignPath requires a "Code signing policy" section in the README: add it then.
 name: Release
 
 on:
