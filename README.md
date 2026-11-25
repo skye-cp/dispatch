@@ -12,7 +12,7 @@
 
 [![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-d8433b?style=for-the-badge)](https://github.com/skye-cp/dispatch/releases/latest/download/Dispatch.exe)
 
-<sub>One portable file, about 115 KB · <a href="https://github.com/skye-cp/dispatch/releases">All releases</a></sub>
+<sub>One portable file, under 150 KB · <a href="https://github.com/skye-cp/dispatch/releases">All releases</a></sub>
 
 <br>
 <br>
