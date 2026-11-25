@@ -57,6 +57,7 @@ namespace Dispatch
         private readonly RecentList recent = new RecentList();
         private readonly DispatcherTimer watchTimer;
         private readonly HostWatch hosts = new HostWatch();
+        private HashSet<string> contested = new HashSet<string>();
         private DateTime? baselineUtc;
         private bool autoRefresh;
         private bool watching;
@@ -224,9 +225,10 @@ namespace Dispatch
                 ShowDefaultStatus();
             }
 
+            LookupOutput output = null;
             try
             {
-                await client.RunAsync(
+                output = await client.RunAsync(
                     missing,
                     (index, servers) => Dispatcher.BeginInvoke(new Action(() =>
                     {
@@ -278,16 +280,17 @@ namespace Dispatch
                 }
 
                 errorSounded = lastError != null;
-                if (baselineUtc == null && lastError == null)
+                if (baselineUtc == null && (lastError == null || doneRequests > 0))
                 {
-                    // Servers that show up after this first full load count as new.
+                    // Servers that show up after this first load count as new; a partly failed load still counts, or
+                    // a Steam that keeps timing out on one request would hold new-server marks off for good.
                     baselineUtc = DateTime.UtcNow;
                 }
 
-                if (lastError == null && !demo && client.NewestCounter > 0)
+                if (output != null && !demo && output.NewestCounter > 0)
                 {
-                    // The lookup's unfiltered sample: its newest server was created moments ago.
-                    lobbyAge.AddAnchor(client.NewestCounter, DateTime.UtcNow);
+                    // This lookup's unfiltered sample: its newest server was created moments ago.
+                    lobbyAge.AddAnchor(output.NewestCounter, DateTime.UtcNow);
                     QueueSave();
                 }
 
@@ -719,7 +722,7 @@ namespace Dispatch
                 : "Refresh from Steam (F5), or scroll on past the top or bottom of the list.";
         }
 
-        // Toolbar menus are popups, like the filter dropdowns, so a second click on their button closes them.
+        // Toolbar menus are popups built on first open, one per button; filter dropdowns are popups in XAML. Both close on an outside click and share the dismiss rule below.
         private readonly Dictionary<UIElement, Popup> menus = new Dictionary<UIElement, Popup>();
         private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
 
@@ -883,7 +886,7 @@ namespace Dispatch
         }
         private Server HostingNow(string owner) => hosts.HostingNow(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
-        private bool KnownNotHosting(string owner) => hosts.KnownNotHosting(owner, DateTime.UtcNow);
+        private bool KnownNotHosting(string owner) => hosts.KnownNotHosting(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
         private bool NeedsCheck(string owner) => hosts.NeedsCheck(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
@@ -892,8 +895,8 @@ namespace Dispatch
         private string HostDetail(string owner, string fallback) => hosts.Detail(owner, browser.Current(DateTime.UtcNow), fallback, DateTime.UtcNow);
 
         /// <summary>
-        /// Asks Steam which of these hosts are hosting now: one quick query each, at most ten per run, least
-        /// recently checked first so a longer list rotates. False when no check ran (busy, demo or Steam failed).
+        /// Asks Steam whether the hosts <see cref="HostWatch.NextToCheck"/> picks are hosting now, one quick query each.
+        /// False when no check ran (busy, demo or Steam failed).
         /// </summary>
         private async Task<bool> CheckHostsAsync(IEnumerable<string> owners)
         {
@@ -907,17 +910,23 @@ namespace Dispatch
             try
             {
                 var found = new Dictionary<string, Server>();
+                var answered = new List<string>();
                 await client.RunAsync(list.Select(LobbyQuery.HostId).ToList(), (i, servers) =>
                 {
                     lock (found)
                     {
+                        if (i >= 0 && i < list.Count)
+                        {
+                            answered.Add(list[i]);
+                        }
+
                         foreach (var s in servers)
                         {
                             found[s.Owner] = s;
                         }
                     }
                 }, null, life.Token);
-                hosts.Record(list, found, DateTime.UtcNow);
+                hosts.Record(answered, found, DateTime.UtcNow);
                 return true;
             }
             catch (Exception e) when (e is LookupException || e is OperationCanceledException)
@@ -931,7 +940,7 @@ namespace Dispatch
             }
         }
 
-        private void OnRecent(object sender, RoutedEventArgs e) => _ = ShowRecentAsync();
+        private async void OnRecent(object sender, RoutedEventArgs e) => await ShowRecentAsync();
 
         /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
         private async Task ShowRecentAsync()
@@ -977,7 +986,7 @@ namespace Dispatch
             }
         }
 
-        private void OnFollowing(object sender, RoutedEventArgs e) => _ = ShowFollowingAsync();
+        private async void OnFollowing(object sender, RoutedEventArgs e) => await ShowFollowingAsync();
 
         /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
         private async Task ShowFollowingAsync()
@@ -1053,7 +1062,7 @@ namespace Dispatch
             var hosting = follows.Hosts.Count > 0 && servers.Any(s => follows.Contains(s.Owner));
             FollowingButton.Content = hosting ? "\uE735" : "\uE734";
             FollowingButton.Foreground = (Brush)FindResource(hosting ? "RedHotBrush" : "TextBrush");
-            FollowingButton.ToolTip = hosting ? "Hosts you follow: one is hosting now" : "Hosts you follow";
+            FollowingButton.ToolTip = hosting ? "Followed hosts: one is hosting now" : "Followed hosts";
         }
 
         private void OnMenu(object sender, RoutedEventArgs e)
@@ -1102,23 +1111,36 @@ namespace Dispatch
 
         private void OnSearchJoin(object sender, RoutedEventArgs e) => JoinPastedLink();
 
-        private void JoinPastedLink()
+        private async void JoinPastedLink()
         {
-            if (pastedLink != null && JoinLinkNow(pastedLink))
+            if (pastedLink != null && await JoinLinkNowAsync(pastedLink))
             {
                 SearchBox.Text = "";
             }
         }
 
-        private bool JoinLinkNow(string link)
+        private async Task<bool> JoinLinkNowAsync(string link)
         {
-            if (!ReadyToJoin() || !Launch(link))
+            if (acting || !ReadyToJoin())
             {
                 return false;
             }
 
-            Say("Joining from the invite link…  watch the game.");
-            return true;
+            acting = true;
+            try
+            {
+                if (!await LaunchAsync(link))
+                {
+                    return false;
+                }
+
+                Say("Joining from the invite link…  watch the game.");
+                return true;
+            }
+            finally
+            {
+                acting = false;
+            }
         }
 
         /// <summary>Shown by the app's last-chance handler: the action failed, the window carries on.</summary>
@@ -1391,7 +1413,7 @@ namespace Dispatch
             return chip;
         }
 
-        /// <summary>A mode, map or bots chip: these are Steam search filters, so new searches may follow.</summary>
+        /// <summary>A mode, map or bots chip; see <see cref="FilterState.NeedsLookup"/>.</summary>
         private void OnSetChip(HashSet<string> set, string value, bool on)
         {
             if (on)
@@ -1448,7 +1470,7 @@ namespace Dispatch
             Render();
         }
 
-        /// <summary>Mode, map and bots changes can need new Steam searches; this waits for clicks to settle first.</summary>
+        /// <summary>Waits for clicks to settle before searching Steam again.</summary>
         private void QueueLookup()
         {
             debounce.Stop();
@@ -1459,7 +1481,7 @@ namespace Dispatch
             var regions = browser.Regions();
             var codes = regions.Select(r => r.Code).ToList();
             codes.AddRange(browser.Filters.Regions.Where(r => !codes.Contains(r, StringComparer.OrdinalIgnoreCase)));
-            // One chip per city: Steam can run several relays in one place (sto, sto2).
+            // One chip per city, covering all its relays.
             var cities = codes.GroupBy(Catalog.RegionName, StringComparer.CurrentCultureIgnoreCase).ToList();
             (string Count, string Tip) Describe(List<string> members)
             {
@@ -1471,7 +1493,7 @@ namespace Dispatch
 
             // Counts and pings change with every answer: update the chips in place, so a click during a refresh
             // isn't lost to a rebuild. Only a different set of cities rebuilds them.
-            var key = string.Join(",", codes);
+            var key = string.Join(",", codes.OrderBy(code => code, StringComparer.OrdinalIgnoreCase));
             if (key == regionChipKeys)
             {
                 foreach (var chip in RegionChips.Children.OfType<ToggleButton>())
@@ -1479,6 +1501,7 @@ namespace Dispatch
                     var (count, tip) = Describe((List<string>)chip.Tag);
                     ((TextBlock)((StackPanel)chip.Content).Children[1]).Text = count;
                     chip.ToolTip = tip;
+                    AutomationProperties.SetItemStatus(chip, count + " servers");
                 }
 
                 return;
@@ -1494,7 +1517,12 @@ namespace Dispatch
                 var content = new StackPanel { Orientation = Orientation.Horizontal };
                 content.Children.Add(new TextBlock { Text = city.Key });
                 content.Children.Add(new TextBlock { Text = count, Margin = new Thickness(7, 0, 0, 0), Opacity = 0.6 });
-                RegionChips.Children.Add(MakeChip(content, members, members.Any(browser.Filters.Regions.Contains), tip, on => OnRegionChip(members, on)));
+                var chip = MakeChip(content, members, members.Any(browser.Filters.Regions.Contains), tip, on => OnRegionChip(members, on));
+
+                // The chip shows a city and a count; screen readers get the city as its name and the count as its status.
+                AutomationProperties.SetName(chip, city.Key);
+                AutomationProperties.SetItemStatus(chip, count + " servers");
+                RegionChips.Children.Add(chip);
             }
 
             if (codes.Count == 0)
@@ -1903,18 +1931,23 @@ namespace Dispatch
             var now = DateTime.UtcNow;
             var friends = demo ? DemoData.Friends : client.Friends;
             var all = browser.All();
+
+            // The owner ID is lobby data the host sets: when several lobbies claim one host, none is trusted as them.
+            contested = new HashSet<string>(all.Concat(hosts.Found).GroupBy(s => s.Owner)
+                .Where(g => g.Select(s => s.Id).Distinct().Count() > 1).Select(g => g.Key));
             foreach (var s in all)
             {
-                s.IsFriend = friends.TryGetValue(s.Owner, out var friendName);
-                s.FriendName = friendName ?? "";
-                s.IsFollowed = follows.Contains(s.Owner);
+                var trusted = !contested.Contains(s.Owner);
+                s.IsFriend = trusted && friends.TryGetValue(s.Owner, out _);
+                s.FriendName = s.IsFriend ? friends[s.Owner] : "";
+                s.IsFollowed = trusted && follows.Contains(s.Owner);
                 var seen = browser.FirstSeenUtc(s.Id);
                 s.IsNew = baselineUtc.HasValue && seen > baselineUtc.Value && now - seen < NewFor;
                 s.AgeMinutes = demo ? DemoData.AgeFor(s.Id) : lobbyAge.AgeMinutes(LobbyAge.CounterOf(s.Id), now) ?? -1;
                 s.IsNewRound = demo ? DemoData.IsNewRound(s.Id) : now - browser.RoundStartUtc(s.Id) < NewRoundFor;
             }
 
-            follows.Refresh(all.Concat(hosts.Found));
+            follows.Refresh(all.Concat(hosts.Found).Where(s => !contested.Contains(s.Owner)));
             var online = OnlineNow(now);
             if (!Busy && !watching)
             {
@@ -1926,8 +1959,8 @@ namespace Dispatch
         }
 
         /// <summary>
-        /// Alerts when a followed host's server appears after being gone for a while. Hosts already
-        /// online at start, or seen within the last few minutes, don't alert.
+        /// Alerts for followed hosts that <see cref="HostWatch.Appeared"/> says just appeared; none before the first
+        /// load, and none for a host ID claimed by more than one lobby.
         /// </summary>
         private void CheckFollowedOnline(IEnumerable<Server> servers, DateTime now)
         {
@@ -1936,7 +1969,7 @@ namespace Dispatch
                 return;
             }
 
-            var appeared = hosts.Appeared(servers, follows.Contains, now);
+            var appeared = hosts.Appeared(servers, o => follows.Contains(o) && !contested.Contains(o), now);
             if (appeared.Count > 0)
             {
                 Alert(appeared);
@@ -1986,7 +2019,7 @@ namespace Dispatch
             var on = follows.Toggle(s.Owner, s.Name);
             if (on)
             {
-                // Already online when followed: no alert for it now.
+                // No alert for the server they are on now; see HostWatch.MarkSeen.
                 hosts.MarkSeen(s.Owner, DateTime.UtcNow);
             }
 
@@ -2004,7 +2037,7 @@ namespace Dispatch
 
         private async void OnWatchTick()
         {
-            if (Busy || watching)
+            if (Busy || watching || DateTime.UtcNow - lastLaunchUtc < QuietAfterJoin)
             {
                 return;
             }
@@ -2087,7 +2120,12 @@ namespace Dispatch
             try
             {
                 Say("Looking for " + r.Name + "'s server…");
-                var (current, asked) = await LookUpHostAsync(r.Owner);
+                var (current, asked) = await LookUpHostAsync(r.Owner, r.Lobby);
+                if (life.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 if (asked && current == null)
                 {
                     Say(r.Name + " is not hosting right now.", true);
@@ -2096,7 +2134,7 @@ namespace Dispatch
 
                 // If Steam can't be asked, the remembered link is the best guess.
                 var link = current?.Link ?? r.Link;
-                if (Launch(link))
+                if (await LaunchAsync(link))
                 {
                     if (current != null)
                     {
@@ -2243,7 +2281,7 @@ namespace Dispatch
             else if (ctrl && e.Key == Key.H)
             {
                 e.Handled = true;
-                _ = ShowRecentAsync();
+                OnRecent(sender, e);
             }
             else if (ctrl && e.Key == Key.D && List.SelectedItem is Server picked)
             {
@@ -2260,6 +2298,13 @@ namespace Dispatch
         {
             if (List.SelectedItem is Server s && SetClipboard(s.Name))
             {
+                // A host name can contain a join link; copying it isn't receiving one, so don't offer to join it.
+                if (JoinLink.TryParse(s.Name, out var inName))
+                {
+                    lastCopied = inName;
+                    ClipboardButton.Visibility = Visibility.Collapsed;
+                }
+
                 Say("Host name copied.");
             }
         }
@@ -2283,7 +2328,7 @@ namespace Dispatch
             try
             {
                 var fresh = await FreshServerAsync(s);
-                if (fresh != null && Launch(fresh.Link))
+                if (fresh != null && await LaunchAsync(fresh.Link))
                 {
                     recent.Add(fresh, DateTime.UtcNow);
                     QueueSave();
@@ -2333,7 +2378,7 @@ namespace Dispatch
                 return;
             }
 
-            JoinLinkNow(link);
+            _ = JoinLinkNowAsync(link);
         }
 
         /// <summary>
@@ -2348,7 +2393,12 @@ namespace Dispatch
             }
 
             Say("Checking " + s.Name + " with Steam…");
-            var (now, asked) = await LookUpHostAsync(s.Owner);
+            var (now, asked) = await LookUpHostAsync(s.Owner, s.Id);
+            if (life.IsCancellationRequested)
+            {
+                return null;
+            }
+
             if (!asked)
             {
                 Say("Steam could not re-check the server, so the last known link is used.");
@@ -2363,13 +2413,23 @@ namespace Dispatch
             return now;
         }
 
-        /// <summary>The host's current server (null if not hosting), and whether Steam could be asked at all.</summary>
-        private async Task<(Server Server, bool Asked)> LookUpHostAsync(string owner)
+        /// <summary>
+        /// The host's current server (null if not hosting), and whether Steam could be asked at all. The owner ID is lobby
+        /// data the host sets, so another lobby can claim it: the lobby already known (<paramref name="lobby"/>) wins,
+        /// and when several others claim the host and none is it, none is trusted (Steam couldn't settle it).
+        /// </summary>
+        private async Task<(Server Server, bool Asked)> LookUpHostAsync(string owner, string lobby = null)
         {
             try
             {
-                var now = await client.FetchAsync(LobbyQuery.HostId(owner), life.Token);
-                return (now.FirstOrDefault(x => x.Owner == owner), true);
+                var now = (await client.FetchAsync(LobbyQuery.HostId(owner), life.Token)).Where(x => x.Owner == owner).ToList();
+                var same = now.FirstOrDefault(x => x.Id == lobby);
+                if (same != null || now.Count <= 1)
+                {
+                    return (same ?? now.FirstOrDefault(), true);
+                }
+
+                return (null, false);
             }
             catch (Exception e) when (e is LookupException || e is OperationCanceledException)
             {
@@ -2389,13 +2449,34 @@ namespace Dispatch
             return ConfirmLaunch();
         }
 
-        private bool Launch(string link)
+        /// <summary>
+        /// Each lookup briefly runs as Bodycam's Steam app. A join link opened while one runs, or just after, may go to
+        /// that phantom instead of the game, so joining waits for lookups to finish and settle, and the watch pauses
+        /// for a couple of minutes after a join while the game starts and connects.
+        /// </summary>
+        private static readonly TimeSpan LookupSettle = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan QuietAfterJoin = TimeSpan.FromMinutes(2);
+        private DateTime lastLaunchUtc = DateTime.MinValue;
+
+        private async Task<bool> LaunchAsync(string link)
         {
-            if (!Open(link))
+            for (var waited = 0; client.Running && waited < 100; waited++)
+            {
+                await Task.Delay(100);
+            }
+
+            var settle = client.LastRunEndedUtc + LookupSettle - DateTime.UtcNow;
+            if (settle > TimeSpan.Zero)
+            {
+                await Task.Delay(settle);
+            }
+
+            if (life.IsCancellationRequested || !Open(link))
             {
                 return false;
             }
 
+            lastLaunchUtc = DateTime.UtcNow;
             sounds.Play(Cue.Join);
             return true;
         }
@@ -2554,11 +2635,9 @@ namespace Dispatch
             quiet = false;
             ShowAutoState();
 
-            if (!double.IsNaN(p.Width) && !double.IsNaN(p.Height))
-            {
-                Width = Math.Max(MinWidth, Math.Min(p.Width, SystemParameters.VirtualScreenWidth));
-                Height = Math.Max(MinHeight, Math.Min(p.Height, SystemParameters.VirtualScreenHeight));
-            }
+            // Saved size, or the default on first launch: either way no bigger than the screens.
+            Width = Math.Max(MinWidth, Math.Min(double.IsNaN(p.Width) ? Width : p.Width, SystemParameters.VirtualScreenWidth));
+            Height = Math.Max(MinHeight, Math.Min(double.IsNaN(p.Height) ? Height : p.Height, SystemParameters.VirtualScreenHeight));
 
             if (Preferences.IsOnScreen(p.Left, p.Top, SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                 SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight))
@@ -2570,7 +2649,9 @@ namespace Dispatch
 
             if (p.Maximized)
             {
+                // Set before the window shows, so WPF raises no StateChanged: apply the maximized frame here.
                 WindowState = WindowState.Maximized;
+                OnWindowState();
             }
         }
 
@@ -2592,7 +2673,13 @@ namespace Dispatch
                 Height = bounds.Height,
                 Maximized = wasMaximized,
             }.Write(settings, browser.Filters, follows, recent, lobbyAge);
-            settings.Save();
+            if (!settings.Save() && !saveFailedShown)
+            {
+                saveFailedShown = true;
+                Say("Dispatch couldn't save its settings to %APPDATA%\\Dispatch. Changes last until you close it.", true);
+            }
         }
+
+        private bool saveFailedShown;
     }
 }

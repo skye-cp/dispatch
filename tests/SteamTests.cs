@@ -27,8 +27,8 @@ namespace Dispatch.Tests
         {
             var s = new Server
             {
-                Id = "111",
-                Owner = "222",
+                Id = "100000000000000111",
+                Owner = "200000000222",
                 Name = "tab\there\nnewline ★",
                 Mode = "Zombie",
                 Map = "Asylum",
@@ -67,10 +67,10 @@ namespace Dispatch.Tests
         [Fact]
         public void PingsAndLocationSurviveTheProtocol()
         {
-            var s = new Server { Id = "1", Owner = "2", Name = "n", Ping = 42 };
+            var s = new Server { Id = "100000000000000001", Owner = "200000000002", Name = "n", Ping = 42 };
             Assert.Equal(42, Protocol.DecodeServer(Protocol.Split(Protocol.EncodeServer(0, s)), 0, DateTime.UtcNow).Ping);
 
-            var old = Protocol.Split("L\t0\t1\t2\tn\tm\tp\tb\tgru\t10");
+            var old = Protocol.Split("L\t0\t100000000000000001\t200000000002\tn\tm\tp\tb\tgru\t10");
             Assert.Equal(Server.NoPing, Protocol.DecodeServer(old, 0, DateTime.UtcNow).Ping);
 
             Assert.True(Protocol.TryDecodePing(Protocol.Split(Protocol.EncodePing("123", 77)), out var lobby, out var ms));

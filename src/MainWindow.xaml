@@ -182,7 +182,7 @@
                         <Button x:Name="RecentButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE81C;" AutomationProperties.Name="Recent servers"
                                 ToolTip="Recent servers (Ctrl+H)" Click="OnRecent" />
                         <Button x:Name="FollowingButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE734;" AutomationProperties.Name="Followed hosts"
-                                ToolTip="Hosts you follow" Click="OnFollowing" />
+                                ToolTip="Followed hosts" Click="OnFollowing" />
                         <Button x:Name="MenuButton" Style="{StaticResource Square}" Content="&#xE712;" AutomationProperties.Name="Menu"
                                 ToolTip="Menu" Click="OnMenu" />
                     </StackPanel>
@@ -403,7 +403,6 @@
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding SlotsText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextDimBrush}" FontSize="15" />
-                                <!-- Values tagged with a filter kind toggle that filter when clicked. -->
                                 <TextBlock Grid.Column="2" Text="{Binding Mode, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="mode" />
                                 <TextBlock Grid.Column="3" Text="{Binding MapName, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="map" />
                                 <TextBlock Grid.Column="4" Text="{Binding BotsText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="bots" />

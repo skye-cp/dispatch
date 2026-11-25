@@ -44,10 +44,10 @@ namespace Dispatch.Tests
         public void FollowsAndRecentSurviveSettingsEvenWithAwkwardNames()
         {
             var follows = new FollowList();
-            follows.Toggle("111", "a|b,c%d ★");
+            follows.Toggle("200000000111", "a|b,c%d ★");
             var recent = new RecentList();
             var when = new DateTime(2026, 11, 25, 3, 0, 0, DateTimeKind.Utc);
-            recent.Add(S("9", "222", "x,y|z"), when);
+            recent.Add(S("100000000000000009", "200000000222", "x,y|z"), when);
 
             var s = new Settings();
             s.SetRecords("followed", follows.ToRecords());
@@ -62,7 +62,7 @@ namespace Dispatch.Tests
             Assert.Equal("a|b,c%d ★", f2.Hosts.Single().Name);
             Assert.Equal("x,y|z", r2.Items.Single().Name);
             Assert.Equal(when, r2.Items.Single().JoinedUtc);
-            Assert.Equal(JoinLink.Format("9", "222"), r2.Items.Single().Link);
+            Assert.Equal(JoinLink.Format("100000000000000009", "200000000222"), r2.Items.Single().Link);
         }
 
         [Fact]

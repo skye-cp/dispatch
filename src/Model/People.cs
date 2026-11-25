@@ -58,7 +58,7 @@ namespace Dispatch.Model
         public void Load(IEnumerable<string[]> records)
         {
             hosts.Clear();
-            foreach (var r in records.Where(r => r.Length >= 2 && r[0].Length > 0))
+            foreach (var r in records.Where(r => r.Length >= 2 && Server.IsSteamId(r[0])))
             {
                 if (!Contains(r[0]))
                 {

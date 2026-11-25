@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Globalization;
 
 namespace Dispatch.Model
@@ -139,10 +140,15 @@ namespace Dispatch.Model
         public string SlotsText => Limit > 0 ? Limit.ToString(CultureInfo.InvariantCulture) : "—";
         public string Link => JoinLink.Format(Id, Owner);
 
-        /// <summary>A Steam 64-bit ID or lobby ID: digits only, within ulong.</summary>
+        /// <summary>
+        /// A Steam 64-bit ID or lobby ID, written plainly: 5 to 20 ASCII digits, no leading zero, within ulong. The
+        /// owner ID is lobby data the host sets and goes into join links, so the worker, the protocol and
+        /// <see cref="JoinLink"/> all accept only this.
+        /// </summary>
         public static bool IsSteamId(string value) =>
-            !string.IsNullOrEmpty(value) && value.Length <= 20 &&
-            ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0;
+            !string.IsNullOrEmpty(value) && value.Length >= 5 && value.Length <= 20 && value[0] != '0' &&
+            value.All(c => c >= '0' && c <= '9') &&
+            ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _);
         public string PingText => Ping >= 0 ? Ping.ToString(CultureInfo.InvariantCulture) : "—";
 
         /// <summary>Good, Fair, Poor or Unknown; drives the ping colour.</summary>

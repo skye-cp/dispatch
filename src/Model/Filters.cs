@@ -18,6 +18,7 @@ namespace Dispatch.Model
     /// <summary>What the user wants to see. An empty set means "any".</summary>
     internal sealed class FilterState
     {
+        /// <summary>The kinds in list-column order (mode, map, bots, region, age, ping): the order the row menu offers them.</summary>
         public static readonly FilterKind[] Kinds = { FilterKind.Mode, FilterKind.Map, FilterKind.Bots, FilterKind.Region, FilterKind.Age, FilterKind.Ping };
 
         /// <summary>A XAML tag ("mode", "bots", …) as a filter kind.</summary>
@@ -106,7 +107,6 @@ namespace Dispatch.Model
 
                     break;
                 case FilterKind.Region:
-                    // One city can have several relays (sto, sto2): toggle them together, like the chip.
                     var codes = regionCodes.Append(s.Region)
                         .Where(c => Catalog.RegionName(c) == s.RegionName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                     foreach (var code in codes)
@@ -290,12 +290,12 @@ namespace Dispatch.Model
     }
 
     /// <summary>
-    /// Turns filters into Steam requests. Steam returns at most 50 lobbies per request and only
-    /// ANDs filters, so the planner asks once per selected value to reach more servers.
+    /// Turns filters into Steam requests. Steam returns at most 50 lobbies per request and only ANDs filters, so the
+    /// planner splits a search into several requests (per mode, per mode and map, or per map) to reach more servers.
     /// </summary>
     internal static class QueryPlanner
     {
-        /// <summary>Cap on per-map requests: each takes about a third of a second, so a full plan stays well inside the lookup timeout.</summary>
+        /// <summary>Cap on requests in one plan: each takes about a third of a second, so a full plan stays well inside the lookup timeout.</summary>
         public const int MaxQueries = 30;
 
         public static List<LobbyQuery> Plan(FilterState f)
@@ -314,14 +314,16 @@ namespace Dispatch.Model
             var bots = f.OneSidedBots;
             var perMap = maps.Count > 0 && modes.Count * maps.Count <= MaxQueries;
 
-            // Maps picked but no mode, too many to ask per mode and map: ask once per map, any mode but Training.
+            // Maps picked but no mode, too many to ask per mode and map: ask once per map. Training is excluded because
+            // it is hidden unless picked, so its private ranges would only use up places among the 50. With modes picked
+            // this can't be one request per map (Steam takes one value per key), so it falls back to per mode.
             if (!perMap && maps.Count > 0 && f.Modes.Count == 0)
             {
-                return maps.Select(map => LobbyQuery.OnMap(map, bots)).ToList();
+                return maps.Take(MaxQueries).Select(map => LobbyQuery.OnMap(map, bots)).ToList();
             }
 
             var plan = new List<LobbyQuery>();
-            foreach (var mode in modes)
+            foreach (var mode in modes.Take(MaxQueries))
             {
                 if (perMap)
                 {

@@ -6,11 +6,13 @@ namespace Dispatch.Model
     internal static class JoinLink
     {
         private static readonly Regex Pattern = new Regex(
-            @"steam://joinlobby/" + Catalog.AppId + @"/(?<lobby>\d{5,20})/(?<owner>\d{5,20})(?!\d)",
+            @"steam://joinlobby/" + Catalog.AppId + @"/(?<lobby>[0-9]{5,20})/(?<owner>[0-9]{5,20})(?![0-9])",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         private static readonly Regex Exact = new Regex(
-            @"\Asteam://joinlobby/" + Catalog.AppId + @"/\d{5,20}/\d{5,20}\z", RegexOptions.CultureInvariant);
+            @"\Asteam://joinlobby/" + Catalog.AppId + @"/[0-9]{5,20}/[0-9]{5,20}\z", RegexOptions.CultureInvariant);
+
+        private const int ScanLimit = 4096;
 
         /// <summary>The join link for a lobby, or null when either ID is not a plain SteamID.</summary>
         public static string Format(string lobby, string owner) =>
@@ -30,14 +32,18 @@ namespace Dispatch.Model
                 return false;
             }
 
-            var m = Pattern.Match(text);
-            if (!m.Success)
+            // The first well-formed link wins; a malformed one earlier in the text doesn't hide it.
+            // Only the start of a very long paste is searched, so a huge clipboard can't stall the window.
+            foreach (Match m in Pattern.Matches(text.Length > ScanLimit ? text.Substring(0, ScanLimit) : text))
             {
-                return false;
+                link = Format(m.Groups["lobby"].Value, m.Groups["owner"].Value);
+                if (link != null)
+                {
+                    return true;
+                }
             }
 
-            link = Format(m.Groups["lobby"].Value, m.Groups["owner"].Value);
-            return link != null;
+            return false;
         }
     }
 }

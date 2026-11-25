@@ -20,6 +20,11 @@ namespace Dispatch.Model
         private static readonly TimeSpan MinRateSpan = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan ProjectionWindow = TimeSpan.FromHours(3);
 
+        // Bounds on the measured rate. Steam's pace drifts slowly; a measurement far outside this band comes from an
+        // anchor whose "newest" lobby was minutes old (a quiet period) or from a clock change, so it is clamped.
+        private const double MinRateFactor = 0.6;
+        private const double MaxRateFactor = 1.6;
+
         /// <summary>A refresh needs this many servers for its newest lobby to be a fair "created just now" anchor.</summary>
         public const int MinServersForAnchor = 20;
 
@@ -47,7 +52,10 @@ namespace Dispatch.Model
                 return;
             }
 
-            // A counter behind the latest anchor is not "created just now"; a repeated old sample would skew the rate.
+            // Expired anchors go first, so one left from long ago (a hibernated PC, a counter wrap since) can't block
+            // every new one. Then a counter behind the latest anchor is not "created just now": a repeated old sample
+            // would skew the rate.
+            Prune(nowUtc);
             var latest = anchors.OrderBy(a => a.Utc).LastOrDefault();
             if (latest != null && Delta(newestCounter, latest.Counter) <= 0)
             {
@@ -55,12 +63,15 @@ namespace Dispatch.Model
             }
 
             anchors.Add(new Anchor(newestCounter, nowUtc));
-            anchors.RemoveAll(a => nowUtc - a.Utc > AnchorLifetime);
             if (anchors.Count > MaxAnchors)
             {
                 anchors.RemoveRange(0, anchors.Count - MaxAnchors);
             }
         }
+
+        /// <summary>Drops anchors past their lifetime, and any stamped in the future (the clock was set back).</summary>
+        private void Prune(DateTime nowUtc) =>
+            anchors.RemoveAll(a => nowUtc - a.Utc > AnchorLifetime || a.Utc - nowUtc > TimeSpan.FromMinutes(1));
 
         public double RatePerMinute(DateTime nowUtc)
         {
@@ -74,7 +85,8 @@ namespace Dispatch.Model
                     .FirstOrDefault();
                 if (best != null && Delta(best.Counter, first.Counter) > 0)
                 {
-                    return Delta(best.Counter, first.Counter) / (best.Utc - first.Utc).TotalMinutes;
+                    var rate = Delta(best.Counter, first.Counter) / (best.Utc - first.Utc).TotalMinutes;
+                    return Math.Max(DefaultRatePerMinute * MinRateFactor, Math.Min(DefaultRatePerMinute * MaxRateFactor, rate));
                 }
             }
 
@@ -84,6 +96,7 @@ namespace Dispatch.Model
         /// <summary>Estimated age in minutes, or null before the first anchor.</summary>
         public double? AgeMinutes(uint counter, DateTime nowUtc)
         {
+            Prune(nowUtc);
             if (counter == 0 || anchors.Count == 0)
             {
                 return null;

@@ -39,22 +39,27 @@ namespace Dispatch.Steam
         /// <summary>The player's Steam friends (SteamID → name) from the latest lookup. Memory only.</summary>
         public IReadOnlyDictionary<string, string> Friends { get; private set; } = new Dictionary<string, string>();
 
-        /// <summary>Highest lobby counter from the latest run's age sample, or 0 when that run took none. See <see cref="LobbyAge"/>.</summary>
-        public uint NewestCounter { get; private set; }
+        /// <summary>When the last lookup process ended: Steam needs a moment after one before a join link reaches the game.</summary>
+        public DateTime LastRunEndedUtc { get; private set; }
+
+        /// <summary>True while a lookup process is running or waiting to.</summary>
+        public bool Running => gate.CurrentCount == 0;
 
         /// <param name="onAnswer">Called on a worker thread with each request's index and servers.</param>
         /// <param name="onPings">Called on a worker thread with pings measured after the servers were listed.</param>
         /// <param name="sampleAge">Also take one unfiltered sample of the newest servers, for age estimates.</param>
-        public async Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
+        /// <returns>What the run reported besides servers, such as its age sample (see <see cref="LookupOutput"/>).</returns>
+        public async Task<LookupOutput> RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
             Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge = false)
         {
             await gate.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                await Task.Run(() => Run(queries, onAnswer, onPings, token, sampleAge), token).ConfigureAwait(false);
+                return await Task.Run(() => Run(queries, onAnswer, onPings, token, sampleAge), token).ConfigureAwait(false);
             }
             finally
             {
+                LastRunEndedUtc = DateTime.UtcNow;
                 gate.Release();
             }
         }
@@ -66,10 +71,9 @@ namespace Dispatch.Steam
             return result;
         }
 
-        private void Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
+        private LookupOutput Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
             Action<Dictionary<string, int>> onPings, CancellationToken token, bool sampleAge)
         {
-            NewestCounter = 0;
             if (steamApi == null)
             {
                 steamApi = GameLocator.PrepareSteamApi();
@@ -119,7 +123,6 @@ namespace Dispatch.Steam
                             LocationUtc = DateTime.UtcNow;
                         }
 
-                        NewestCounter = output.NewestCounter;
                         if (output.Friends.Count > 0)
                         {
                             Friends = output.Friends;
@@ -144,10 +147,12 @@ namespace Dispatch.Steam
 
                         if (output.Answered == 0 && queries.Count > 0)
                         {
-                            var detail = stderr.Wait(500) ? stderr.Result.Trim() : "";
+                            var detail = FirstLine(stderr);
                             throw new LookupException("Steam did not answer. Check that Steam is running and online." +
-                                (detail.Length > 0 ? " (" + detail.Split('\n')[0].Trim() + ")" : ""));
+                                (detail.Length > 0 ? " (" + detail + ")" : ""));
                         }
+
+                        return output;
                     }
                     catch (System.IO.IOException e)
                     {
@@ -159,6 +164,19 @@ namespace Dispatch.Steam
                         Kill(process);
                     }
                 }
+            }
+        }
+
+        /// <summary>The first line the lookup process wrote to stderr, if it finished writing soon; never throws.</summary>
+        private static string FirstLine(Task<string> stderr)
+        {
+            try
+            {
+                return stderr.Wait(500) ? stderr.Result.Trim().Split('\n')[0].Trim() : "";
+            }
+            catch (AggregateException)
+            {
+                return "";
             }
         }
 

@@ -20,7 +20,7 @@ namespace Dispatch.Tests
         }
 
         [Fact]
-        public void PlanSplitsByMapWhenItFits()
+        public void PickedModesAndFewMapsAskPerModeAndMap()
         {
             var f = new FilterState();
             f.Modes.Add("GunGame");

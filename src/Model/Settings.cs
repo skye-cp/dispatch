@@ -10,19 +10,25 @@ namespace Dispatch.Model
     /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>
     internal sealed class Settings
     {
-        private static readonly string FilePath = Path.Combine(
+        public static readonly string DefaultPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Dispatch", "settings.ini");
 
-        private readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Longest field kept in a record: host names are far shorter; a huge one could only come from a damaged file.</summary>
+        private const int MaxFieldLength = 512;
 
-        public static Settings Load()
+        private readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private string filePath = DefaultPath;
+
+        public static Settings Load() => Load(DefaultPath);
+
+        public static Settings Load(string path)
         {
-            var s = new Settings();
+            var s = new Settings { filePath = path };
             try
             {
-                if (File.Exists(FilePath))
+                if (File.Exists(path))
                 {
-                    s.Parse(File.ReadAllText(FilePath, Encoding.UTF8));
+                    s.Parse(File.ReadAllText(path, Encoding.UTF8));
                 }
             }
             catch (IOException)
@@ -37,39 +43,50 @@ namespace Dispatch.Model
             return s;
         }
 
-        /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>
+        /// <summary>
         /// Set when the file exists but could not be read (locked by a sync tool or antivirus, say): saving
         /// then would replace the user's follows and recent servers with defaults, so this session doesn't.
         /// </summary>
         public bool ReadOnly { get; private set; }
 
-        public void Save()
+        /// <summary>Writes the file. False when it could not be written (the window says so once); true when skipped as read-only.</summary>
+        public bool Save()
         {
             if (ReadOnly)
             {
-                return;
+                return true;
             }
 
+            var temp = filePath + ".tmp";
             try
             {
                 // Written to a temporary file first, so a crash mid-write never leaves a truncated settings file.
-                Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                var temp = FilePath + ".tmp";
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 File.WriteAllText(temp, Serialize(), new UTF8Encoding(false));
-                if (File.Exists(FilePath))
+                if (File.Exists(filePath))
                 {
-                    File.Replace(temp, FilePath, null);
+                    try
+                    {
+                        File.Replace(temp, filePath, null);
+                    }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                    {
+                        // A read-only file, or one held open without delete sharing: overwrite it in place instead.
+                        File.SetAttributes(filePath, File.GetAttributes(filePath) & ~FileAttributes.ReadOnly);
+                        File.Copy(temp, filePath, true);
+                        File.Delete(temp);
+                    }
                 }
                 else
                 {
-                    File.Move(temp, FilePath);
+                    File.Move(temp, filePath);
                 }
+
+                return true;
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
-            }
-            catch (UnauthorizedAccessException)
-            {
+                return false;
             }
         }
 
@@ -98,12 +115,14 @@ namespace Dispatch.Model
         public void SetList(string key, IEnumerable<string> items) =>
             Set(key, string.Join(",", items.Where(i => i.IndexOf(',') < 0)));
 
-        /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>Lists of records whose fields may hold any text (host names), escaped so separators can't clash.</summary>
+        /// <summary>Lists of records whose fields may hold any text (host names), escaped so separators can't clash.</summary>
         public IEnumerable<string[]> GetRecords(string key) =>
-            GetList(key).Select(r => r.Split('|').Select(Uri.UnescapeDataString).ToArray());
+            GetList(key).Select(r => r.Split('|').Select(f => Truncate(Uri.UnescapeDataString(f))).ToArray());
 
         public void SetRecords(string key, IEnumerable<string[]> records) =>
-            Set(key, string.Join(",", records.Select(r => string.Join("|", r.Select(f => Uri.EscapeDataString(f ?? ""))))));
+            Set(key, string.Join(",", records.Select(r => string.Join("|", r.Select(f => Uri.EscapeDataString(Truncate(f ?? "")))))));
+
+        private static string Truncate(string field) => field.Length <= MaxFieldLength ? field : field.Substring(0, MaxFieldLength);
 
         public double GetDouble(string key, double fallback) =>
             double.TryParse(Get(key), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
