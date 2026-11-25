@@ -32,11 +32,11 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Filters that combine.** Game mode, map, region, ping and bots, with several values of each, remembered between sessions.
 - **Click to filter.** Click a mode, map, bot setting, region or ping in the list to filter by it; click again to undo.
 - **Friends first.** Servers hosted by your Steam friends are marked and pinned to the top.
-- **Follow hosts.** Star a host to pin their server and get an alert when it appears.
+- **Follow hosts.** Star a host to pin their server and get an alert when it appears; the star menu shows who is hosting now.
 - **Host search.** Type a host's name to find the server a friend is playing on.
-- **Join, invite, rejoin.** One click to join; invite links put friends in the same server; **Recent** rejoins a host after a disconnect.
-- **Auto-refresh.** Optional, every minute while Dispatch is open, with new servers marked. Or pull past the top or bottom of the list to refresh.
-- **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites, follows, alerts and errors, with a mute button in the title bar.
+- **Join, invite, rejoin.** One click to join; invite links put friends in the same server; the recent menu rejoins a host after a disconnect, and shows who is still hosting. Joining also copies the invite link, ready to send (switch it off in the menu).
+- **Auto-refresh.** Optional, every minute while Dispatch is open, with new servers marked; a ring around the refresh button counts down to the next one. Or pull past the top or bottom of the list to refresh.
+- **Smooth and quiet.** The list updates in place with gentle animations; a few short sounds mark joins, copied invites, follows, alerts and errors, and can be muted from the menu.
 - **Server age.** How long each server has been up, to tell fresh servers still filling up from established ones.
 - **New rounds.** Servers whose map just changed are marked, the best moment to join.
 - **Players online.** How many people are playing Bodycam right now, from Steam.
@@ -57,11 +57,11 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 > [!NOTE]
 > Releases are not code-signed yet, so Windows may warn about an unknown publisher on the first run. Choose **More info**, then **Run anyway**. See the [code signing policy](#code-signing-policy).
 
-Search sits across the top, like a browser's address bar. To narrow the list, use the filter buttons beneath it (each opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset**, at the end of the filters, clears everything.
+The toolbar works like a browser's. Refresh and **Auto** sit on the left. Search runs across the middle like an address bar, and also takes invite links. On the right are **Recent** (history), **Followed hosts** (bookmarks) and the menu. To narrow the list, use the filter buttons beneath it (each opens a small menu and shows what is selected) or click a value in the list itself, such as a mode, map or region. **Reset**, at the end of the filters, clears everything.
 
 ### Play with a friend
 
-- **Bring them to your server.** Select it, press **Copy invite link** and send the link. Your friend opens it with Bodycam running, either with **Join pasted link** in Dispatch or by pasting it into <kbd>Win</kbd>+<kbd>R</kbd>.
+- **Bring them to your server.** Select it, press **Copy invite link** and send the link. Your friend opens it with Bodycam running, either by pasting it into Dispatch's search box and pressing <kbd>Enter</kbd>, or by pasting it into <kbd>Win</kbd>+<kbd>R</kbd>.
 - **Go to theirs.** If they host it, it is already at the top, marked **FRIEND**. Otherwise type their server's host name, the name shown in the game's server list, and press <kbd>Enter</kbd>.
 - **Wait for them.** Click the star next to a host's name. While Dispatch is open, it checks every minute and alerts you (a sound and a flashing taskbar button) when that host's server appears.
 
@@ -72,8 +72,10 @@ Search sits across the top, like a browser's address bar. To narrow the list, us
 | <kbd>Enter</kbd> or double-click | Join the selected server |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Copy its invite link |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Join the link on the clipboard |
-| <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>Ctrl</kbd>+<kbd>L</kbd> | Search host names; <kbd>Enter</kbd> searches every server |
-| <kbd>F5</kbd>, or scroll on past the top or bottom | Refresh |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>Ctrl</kbd>+<kbd>L</kbd> | Search host names (<kbd>Enter</kbd> searches every server), or paste an invite link to join it |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Follow or unfollow the selected host |
+| <kbd>Ctrl</kbd>+<kbd>H</kbd> | Recent servers |
+| <kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd>, or scroll on past the top or bottom | Refresh |
 | <kbd>Esc</kbd> | Clear the search |
 
 ## FAQ

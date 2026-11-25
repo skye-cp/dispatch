@@ -37,8 +37,6 @@
                                Text="Find a Bodycam server. Join it, or send a friend the link." />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                    <Button x:Name="SoundButton" Style="{StaticResource Caption}" AutomationProperties.Name="Sounds" Content="&#xE767;" ToolTip="Sounds on. Click to mute."
-                            WindowChrome.IsHitTestVisibleInChrome="True" Click="OnSoundToggle" />
                     <Button x:Name="MinButton" Style="{StaticResource Caption}" AutomationProperties.Name="Minimize" Content="&#xE921;" ToolTip="Minimize"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnMinimize" />
                     <Button x:Name="MaxButton" Style="{StaticResource Caption}" AutomationProperties.Name="Maximize" Content="&#xE922;" ToolTip="Maximize"
@@ -61,32 +59,78 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="RefreshButton" Style="{StaticResource Square}" Margin="0,0,8,0" AutomationProperties.Name="Refresh"
-                            ToolTip="Refresh from Steam (F5), or scroll on past the top or bottom of the list" Click="OnRefresh">
-                        <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" RenderTransformOrigin="0.5,0.5">
-                            <TextBlock.RenderTransform><RotateTransform /></TextBlock.RenderTransform>
-                        </TextBlock>
-                    </Button>
+                    <!-- Refresh and AUTO, joined as one control: refresh now, or every minute. While AUTO is on,
+                         a ring around the refresh icon fills until the next refresh. -->
+                    <Border x:Name="RefreshGroup" BorderThickness="1" CornerRadius="2" Height="30" Margin="0,0,8,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource TextDimBrush}" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <Grid>
+                                <Button x:Name="RefreshButton" Style="{StaticResource Square}" Height="28" Width="34" BorderBrush="Transparent" AutomationProperties.Name="Refresh"
+                                        ToolTip="Refresh" ToolTipOpening="OnRefreshTip" Click="OnRefresh">
+                                    <Button.Resources>
+                                        <SolidColorBrush x:Key="HoverLine" Color="Transparent" />
+                                        <SolidColorBrush x:Key="HoverFill" Color="{StaticResource RowSelectedColor}" />
+                                    </Button.Resources>
+                                    <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" RenderTransformOrigin="0.5,0.5">
+                                        <TextBlock.RenderTransform><RotateTransform /></TextBlock.RenderTransform>
+                                    </TextBlock>
+                                </Button>
+                                <Ellipse x:Name="CountdownRing" Width="22" Height="22" Stroke="{StaticResource RedHotBrush}" StrokeThickness="1.5"
+                                         StrokeDashArray="42.9 42.9" StrokeDashOffset="42.9" IsHitTestVisible="False" Visibility="Collapsed"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform><RotateTransform Angle="-90" /></Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Grid>
+                            <Rectangle Width="1" Fill="{StaticResource LineStrongBrush}" />
+                            <ToggleButton x:Name="AutoToggle" Style="{StaticResource Chip}" Margin="0" Padding="10,0,11,1" Height="28" BorderBrush="Transparent"
+                                          AutomationProperties.Name="Auto-refresh"
+                                          ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
+                                          Checked="OnAutoChanged" Unchecked="OnAutoChanged">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse x:Name="AutoDot" Width="6" Height="6" Fill="{StaticResource OnRedBrush}" Margin="0,1,7,0"
+                                             VerticalAlignment="Center" Visibility="Collapsed" />
+                                    <TextBlock Text="AUTO" />
+                                </StackPanel>
+                            </ToggleButton>
+                        </StackPanel>
+                    </Border>
                     <Grid Grid.Column="1">
-                        <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name  ·  Enter searches all"
-                                 AutomationProperties.Name="Search host names" ToolTip="Search host names (Ctrl+F)"
+                        <TextBox x:Name="SearchBox" Style="{StaticResource Search}" Tag="Host name or invite link  ·  Enter searches all"
+                                 AutomationProperties.Name="Search host names" ToolTip="Search host names (Ctrl+F), or paste a friend's invite link to join it"
                                  TextChanged="OnSearchChanged" PreviewKeyDown="OnSearchKey" Padding="24,0,26,0" />
                         <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{StaticResource TextDimBrush}"
                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,1,0,0" IsHitTestVisible="False" />
-                        <Button x:Name="ClearSearch" Style="{StaticResource Link}" AutomationProperties.Name="Clear search" FontFamily="{StaticResource IconFont}" FontSize="10"
-                                Content="&#xE711;" HorizontalAlignment="Right" Margin="0,0,4,0" Visibility="Collapsed"
-                                ToolTip="Clear (Esc)" Click="OnClearSearch" />
-                    </Grid>
-                    <ToggleButton x:Name="AutoToggle" Grid.Column="2" Style="{StaticResource Chip}" Margin="8,0,0,0" Padding="10,5,10,6" AutomationProperties.Name="Auto-refresh"
-                                  VerticalAlignment="Center"
-                                  ToolTip="Refresh every minute while Dispatch is open, and mark servers that appear. Each refresh shows you as playing Bodycam on Steam for a second."
-                                  Checked="OnAutoChanged" Unchecked="OnAutoChanged">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="AutoDot" Width="6" Height="6" Fill="{StaticResource OnRedBrush}" Margin="0,1,7,0"
-                                     VerticalAlignment="Center" Visibility="Collapsed" />
-                            <TextBlock Text="AUTO" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="SearchJoin" Style="{StaticResource Primary}" FontSize="12" Padding="10,2,10,3" Margin="0,4,4,4" Visibility="Collapsed"
+                                    AutomationProperties.Name="Join this server" ToolTip="Join the server in this invite link (Enter)" Click="OnSearchJoin">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="JOIN THIS SERVER" />
+                                    <TextBlock Text="&#xE751;" FontFamily="{StaticResource IconFont}" FontSize="10" Margin="8,2,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ClearSearch" Style="{StaticResource Link}" AutomationProperties.Name="Clear search" FontFamily="{StaticResource IconFont}" FontSize="10"
+                                    Content="&#xE711;" VerticalAlignment="Center" Margin="0,0,4,0" Visibility="Collapsed"
+                                    ToolTip="Clear (Esc)" Click="OnClearSearch" />
                         </StackPanel>
-                    </ToggleButton>
+                    </Grid>
+                    <!-- Browser-style menus: history, bookmarks (followed hosts) and the main menu. -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                        <Button x:Name="RecentButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE81C;" AutomationProperties.Name="Recent servers"
+                                ToolTip="Recent servers (Ctrl+H)" Click="OnRecent" ContextMenuService.IsEnabled="False" />
+                        <Button x:Name="FollowingButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE734;" AutomationProperties.Name="Followed hosts"
+                                ToolTip="Hosts you follow" Click="OnFollowing" />
+                        <Button x:Name="MenuButton" Style="{StaticResource Square}" Content="&#xE712;" AutomationProperties.Name="Menu"
+                                ToolTip="Menu" Click="OnMenu" />
+                    </StackPanel>
                 </Grid>
                 <WrapPanel x:Name="FilterBar" Grid.Row="1">
                     <Grid Margin="0,0,6,6">
@@ -474,16 +518,6 @@
                 <TextBlock x:Name="Status" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" FontSize="12"
                            Foreground="{StaticResource TextDimBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,16,0" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button x:Name="RecentButton" Style="{StaticResource Ghost}" Margin="0,0,8,0"
-                            ToolTip="Rejoin a server you joined recently" Click="OnRecent">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE81C;" VerticalAlignment="Center" Margin="0,1,8,0" />
-                            <TextBlock Text="RECENT" />
-                        </StackPanel>
-                        <Button.ContextMenu>
-                            <ContextMenu x:Name="RecentMenu" Placement="Top" />
-                        </Button.ContextMenu>
-                    </Button>
                     <Button x:Name="ClipboardButton" Style="{StaticResource Ghost}" Margin="0,0,8,0" Visibility="Collapsed"
                             ToolTip="A Bodycam invite link is on your clipboard (Ctrl+Shift+V)" Click="OnJoinClipboard">
                         <StackPanel Orientation="Horizontal">

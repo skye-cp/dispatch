@@ -14,6 +14,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Dispatch.Model;
 using Dispatch.Steam;
@@ -285,6 +286,7 @@ namespace Dispatch
                 }
 
                 Render();
+                RestartCountdown();
                 _ = RefreshPlayersOnlineAsync();
             }
         }
@@ -376,6 +378,7 @@ namespace Dispatch
             var spin = (RotateTransform)RefreshIcon.RenderTransform;
             if (busy)
             {
+                CountdownRing.Visibility = Visibility.Collapsed;
                 progress.Begin(this, true);
                 if (Motion.Enabled)
                 {
@@ -663,28 +666,351 @@ namespace Dispatch
             return null;
         }
 
-        // ---------- sounds ----------
+        // ---------- browser-style toolbar ----------
 
-        private void OnSoundToggle(object sender, RoutedEventArgs e)
+        /// <summary>The countdown ring's dash length, in stroke widths: the circumference of a 22 px ring with a 1.5 px stroke.</summary>
+        private const double RingLength = 42.9;
+
+        private static readonly TimeSpan HostCheckFor = TimeSpan.FromMinutes(2);
+
+        /// <summary>The next automatic refresh is a minute after the last refresh of any kind; the ring shows how close it is.</summary>
+        private void RestartCountdown()
         {
-            sounds.Enabled = !sounds.Enabled;
-            ShowSoundState();
-            QueueSave();
-            if (sounds.Enabled)
+            watchTimer.Stop();
+            watchTimer.Start();
+            nextAutoUtc = DateTime.UtcNow + WatchEvery;
+            var show = autoRefresh && !Busy;
+            CountdownRing.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            CountdownRing.BeginAnimation(Shape.StrokeDashOffsetProperty, show ? new DoubleAnimation(RingLength, 0, WatchEvery) : null);
+        }
+
+        private void OnRefreshTip(object sender, ToolTipEventArgs e)
+        {
+            var left = Math.Max(1, (int)Math.Ceiling((nextAutoUtc - DateTime.UtcNow).TotalSeconds));
+            RefreshButton.ToolTip = autoRefresh && !Busy
+                ? "Refresh now (F5). Next automatic refresh in " + left + " s."
+                : "Refresh from Steam (F5), or scroll on past the top or bottom of the list.";
+        }
+
+        /// <summary>A toolbar menu that opens below its button, right edges aligned, so it stays inside the window.</summary>
+        private static ContextMenu NewMenu(UIElement anchor) => new ContextMenu
+        {
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Custom,
+            CustomPopupPlacementCallback = (popup, target, offset) => new[]
             {
-                sounds.Play(Cue.Copy);
+                new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
+            },
+        };
+
+        private MenuItem MenuTitle(string text, string note = null) => new MenuItem
+        {
+            Header = new TextBlock { Text = text, FontFamily = (FontFamily)FindResource("HeadFont"), FontSize = 12, Foreground = (Brush)FindResource("TextDimBrush") },
+            InputGestureText = note ?? "",
+            IsEnabled = false,
+        };
+
+        /// <summary>A menu entry with a name and a dimmer detail line; a green dot marks a host who is hosting now.</summary>
+        private object TwoLine(string name, string detail, bool live)
+        {
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 0) };
+            if (live)
+            {
+                line.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = (Brush)FindResource("GoodBrush"), Margin = new Thickness(0, 1, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+            }
+
+            line.Children.Add(new TextBlock { Text = detail, FontSize = 12, Foreground = (Brush)FindResource("TextDimBrush") });
+            var panel = new StackPanel();
+            panel.Children.Add(new TextBlock { Text = name });
+            panel.Children.Add(line);
+            return panel;
+        }
+
+        /// <summary>The host's current server if known: from a recent check, the list, or the follow watch.</summary>
+        private Server HostingNow(string owner)
+        {
+            if (hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor)
+            {
+                return hostFound.TryGetValue(owner, out var checkedServer) ? checkedServer : null;
+            }
+
+            return browser.All().FirstOrDefault(s => s.Owner == owner) ?? (watchFound.TryGetValue(owner, out var watched) ? watched : null);
+        }
+
+        private bool KnownNotHosting(string owner) =>
+            hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor && !hostFound.ContainsKey(owner);
+
+        private bool NeedsCheck(string owner) =>
+            HostingNow(owner) == null && !KnownNotHosting(owner);
+
+        /// <summary>Asks Steam which of these hosts are hosting now (one quick query each, at most ten).</summary>
+        private async Task CheckHostsAsync(IEnumerable<string> owners)
+        {
+            var list = owners.Distinct().Take(10).ToList();
+            if (list.Count == 0 || demo || Busy || watching)
+            {
+                return;
+            }
+
+            watching = true;
+            try
+            {
+                var found = new Dictionary<string, Server>();
+                await client.RunAsync(list.Select(LobbyQuery.HostId).ToList(), (i, servers) =>
+                {
+                    lock (found)
+                    {
+                        foreach (var s in servers)
+                        {
+                            found[s.Owner] = s;
+                        }
+                    }
+                }, null, CancellationToken.None);
+                foreach (var owner in list)
+                {
+                    hostChecked[owner] = DateTime.UtcNow;
+                    if (found.TryGetValue(owner, out var s))
+                    {
+                        hostFound[owner] = s;
+                    }
+                    else
+                    {
+                        hostFound.Remove(owner);
+                    }
+                }
+            }
+            catch (Exception e) when (e is LookupException || e is LocatorException)
+            {
+                // Statuses stay unknown; the menus still work.
+            }
+            finally
+            {
+                watching = false;
             }
         }
 
-        private void ShowSoundState()
+        private string HostDetail(string owner, string fallback)
         {
-            SoundButton.Content = sounds.Enabled ? "" : "";
-            SoundButton.ToolTip = sounds.Enabled ? "Sounds on. Click to mute." : "Sounds muted. Click to turn on.";
+            var now = HostingNow(owner);
+            return now != null ? "Hosting now  ·  " + now.Mode + " · " + now.MapName
+                : KnownNotHosting(owner) ? "Not hosting now"
+                : fallback;
+        }
+
+        private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
+
+        /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
+        private async void ShowRecent()
+        {
+            var menu = NewMenu(RecentButton);
+            var checking = recent.Items.Any(r => NeedsCheck(r.Owner)) && !demo;
+            void Fill()
+            {
+                menu.Items.Clear();
+                menu.Items.Add(MenuTitle("RECENT SERVERS", checking ? "checking…" : null));
+                if (recent.Items.Count == 0)
+                {
+                    menu.Items.Add(new MenuItem { Header = "Servers you join appear here.", IsEnabled = false });
+                }
+
+                foreach (var r in recent.Items)
+                {
+                    var off = KnownNotHosting(r.Owner);
+                    var item = new MenuItem
+                    {
+                        Header = TwoLine(r.Name, HostDetail(r.Owner, r.Mode + " · " + Catalog.MapName(r.Map)), HostingNow(r.Owner) != null),
+                        InputGestureText = "joined " + Ago(DateTime.UtcNow - r.JoinedUtc),
+                        Opacity = off ? 0.5 : 1,
+                        ToolTip = off ? "Not hosting right now" : "Join " + r.Name + "'s server",
+                    };
+                    var entry = r;
+                    item.Click += (o, a) => _ = RejoinAsync(entry);
+                    menu.Items.Add(item);
+                }
+            }
+
+            Fill();
+            menu.IsOpen = true;
+            if (checking)
+            {
+                await CheckHostsAsync(recent.Items.Select(r => r.Owner).Where(NeedsCheck));
+                checking = false;
+                if (menu.IsOpen)
+                {
+                    Fill();
+                }
+            }
+        }
+
+        private void OnFollowing(object sender, RoutedEventArgs e) => ShowFollowing();
+
+        /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
+        private async void ShowFollowing()
+        {
+            var menu = NewMenu(FollowingButton);
+            var checking = follows.Hosts.Any(h => NeedsCheck(h.Owner)) && !demo;
+            void Fill()
+            {
+                menu.Items.Clear();
+                menu.Items.Add(MenuTitle("FOLLOWED HOSTS", checking ? "checking…" : null));
+                if (follows.Hosts.Count == 0)
+                {
+                    menu.Items.Add(new MenuItem { Header = "Follow a host with the star on their row, or Ctrl+D.", IsEnabled = false });
+                }
+
+                foreach (var h in follows.Hosts.OrderBy(h => HostingNow(h.Owner) == null).ThenBy(h => h.Name, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    var off = KnownNotHosting(h.Owner);
+                    var item = new MenuItem
+                    {
+                        Header = TwoLine(h.Name, HostDetail(h.Owner, demo ? "Not hosting now" : "Checking…"), HostingNow(h.Owner) != null),
+                        Opacity = off ? 0.5 : 1,
+                        ToolTip = off ? "Dispatch alerts you when they host" : "Show their server",
+                    };
+                    var host = h;
+                    item.Click += (o, a) => GoToHost(host);
+                    menu.Items.Add(item);
+                }
+            }
+
+            Fill();
+            menu.IsOpen = true;
+            if (checking)
+            {
+                await CheckHostsAsync(follows.Hosts.Select(h => h.Owner).Where(NeedsCheck));
+                checking = false;
+                if (menu.IsOpen)
+                {
+                    Fill();
+                }
+            }
+        }
+
+        /// <summary>Selects the host's server in the list, or searches every server for it when filters hide it.</summary>
+        private void GoToHost(FollowedHost host)
+        {
+            var row = List.Items.OfType<Server>().FirstOrDefault(s => s.Owner == host.Owner);
+            if (row != null)
+            {
+                List.SelectedItem = row;
+                List.ScrollIntoView(row);
+                FocusSelectedRow();
+                return;
+            }
+
+            if (HostingNow(host.Owner) == null)
+            {
+                Say(host.Name + " isn't hosting right now. Dispatch alerts you when they are.");
+                return;
+            }
+
+            quiet = true;
+            SearchBox.Text = host.Name;
+            quiet = false;
+            SearchEveryServer(host.Name);
+        }
+
+        /// <summary>The star lights up red while a followed host is hosting.</summary>
+        private void ShowFollowingState(IEnumerable<Server> servers)
+        {
+            var hosting = follows.Hosts.Count > 0 && servers.Any(s => follows.Contains(s.Owner));
+            FollowingButton.Content = hosting ? "\uE735" : "\uE734";
+            FollowingButton.Foreground = (Brush)FindResource(hosting ? "RedHotBrush" : "TextBrush");
+            FollowingButton.ToolTip = hosting ? "Hosts you follow: one is hosting now" : "Hosts you follow";
+        }
+
+        private void OnMenu(object sender, RoutedEventArgs e)
+        {
+            var menu = NewMenu(MenuButton);
+            var sound = new MenuItem { Header = "Sounds", IsCheckable = true, IsChecked = sounds.Enabled };
+            sound.Click += (o, a) =>
+            {
+                sounds.Enabled = sound.IsChecked;
+                QueueSave();
+                sounds.Play(Cue.Copy);
+                Say(sounds.Enabled ? "Sounds on." : "Sounds muted.");
+            };
+            var copy = new MenuItem { Header = "Copy invite link when joining", IsCheckable = true, IsChecked = copyOnJoin };
+            copy.Click += (o, a) =>
+            {
+                copyOnJoin = copy.IsChecked;
+                QueueSave();
+                Say(copyOnJoin ? "Joining a server also copies its invite link, ready to send to friends." : "Joining no longer copies the invite link.");
+            };
+            var update = new MenuItem { Header = "Check for updates" };
+            update.Click += (o, a) => _ = CheckForUpdateAsync(true);
+            var about = new MenuItem { Header = "About Dispatch", InputGestureText = VersionText.Text };
+            about.Click += (o, a) => Open("https://github.com/skye-cp/dispatch");
+            menu.Items.Add(sound);
+            menu.Items.Add(copy);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(update);
+            menu.Items.Add(about);
+            menu.IsOpen = true;
+        }
+
+        /// <summary>Copies the joined server's link when that setting is on; returns the note for the status line.</summary>
+        private string CopyOnJoin(string link)
+        {
+            if (!copyOnJoin || !SetClipboard(link))
+            {
+                return "";
+            }
+
+            lastCopied = link;
+            ClipboardButton.Visibility = Visibility.Collapsed;
+            ShowCopied();
+            return " Invite link copied for your friends.";
+        }
+
+        private void ShowSearchJoin()
+        {
+            var on = pastedLink != null;
+            SearchJoin.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            SearchBox.Padding = new Thickness(24, 0, on ? 170 : 26, 0);
+            if (on)
+            {
+                Motion.Fade(SearchJoin, 0, 1, 180);
+                Say("That's an invite link. Press Enter to join its server.");
+            }
+        }
+
+        private void OnSearchJoin(object sender, RoutedEventArgs e) => JoinPastedLink();
+
+        private void JoinPastedLink()
+        {
+            if (pastedLink != null && JoinLinkNow(pastedLink))
+            {
+                SearchBox.Text = "";
+            }
+        }
+
+        private bool JoinLinkNow(string link)
+        {
+            if (demo)
+            {
+                Say("Demo mode: joining is off.");
+                return false;
+            }
+
+            if (!ConfirmLaunch() || !Open(link))
+            {
+                return false;
+            }
+
+            sounds.Play(Cue.Join);
+            Say("Joining from the invite link…  watch the game.");
+            return true;
         }
 
         // ---------- small touches ----------
 
         private DispatcherTimer copiedTimer;
+        private bool copyOnJoin = true;
+        private string pastedLink;
+        private DateTime nextAutoUtc;
+        private readonly Dictionary<string, Server> hostFound = new Dictionary<string, Server>();
+        private readonly Dictionary<string, DateTime> hostChecked = new Dictionary<string, DateTime>();
         private bool errorSounded;
 
         /// <summary>The copy button briefly confirms with a check mark.</summary>
@@ -713,6 +1039,7 @@ namespace Dispatch
         private void ShowAutoState()
         {
             AutoDot.Visibility = autoRefresh ? Visibility.Visible : Visibility.Collapsed;
+            RestartCountdown();
             if (autoRefresh && Motion.Enabled)
             {
                 AutoDot.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.3, TimeSpan.FromSeconds(0.9)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
@@ -1169,8 +1496,15 @@ namespace Dispatch
 
         private void OnSearchChanged(object sender, TextChangedEventArgs e)
         {
+            var pasted = JoinLink.TryParse(SearchBox.Text, out var found) ? found : null;
+            if (pasted != pastedLink)
+            {
+                pastedLink = pasted;
+                ShowSearchJoin();
+            }
+
             var f = browser.Filters;
-            f.Text = SearchBox.Text;
+            f.Text = pastedLink != null ? "" : SearchBox.Text;
             ClearSearch.Visibility = SearchBox.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             if (quiet)
             {
@@ -1194,7 +1528,14 @@ namespace Dispatch
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                SearchEveryServer(SearchBox.Text);
+                if (pastedLink != null)
+                {
+                    JoinPastedLink();
+                }
+                else
+                {
+                    SearchEveryServer(SearchBox.Text);
+                }
             }
             else if (e.Key == Key.Escape)
             {
@@ -1576,6 +1917,8 @@ namespace Dispatch
                 // Only on complete results: a refresh in progress briefly empties the list.
                 CheckFollowedOnline(all.Concat(watchFound.Values), now);
             }
+
+            ShowFollowingState(all.Concat(watchFound.Values));
         }
 
         /// <summary>
@@ -1761,30 +2104,6 @@ namespace Dispatch
 
         // ---------- recent servers ----------
 
-        private void OnRecent(object sender, RoutedEventArgs e)
-        {
-            RecentMenu.Items.Clear();
-            if (recent.Items.Count == 0)
-            {
-                RecentMenu.Items.Add(new MenuItem { Header = "No recent servers yet. Servers you join appear here.", IsEnabled = false });
-            }
-
-            foreach (var r in recent.Items)
-            {
-                var item = new MenuItem
-                {
-                    Header = r.Name + "   ·   " + r.Mode + " · " + Catalog.MapName(r.Map),
-                    InputGestureText = Ago(DateTime.UtcNow - r.JoinedUtc),
-                };
-                var entry = r;
-                item.Click += (o, a) => _ = RejoinAsync(entry);
-                RecentMenu.Items.Add(item);
-            }
-
-            RecentMenu.PlacementTarget = RecentButton;
-            RecentMenu.IsOpen = true;
-        }
-
         /// <summary>Rejoins by host: a host keeps their server across map changes, and re-hosting gives a new lobby, so ask Steam first.</summary>
         private async Task RejoinAsync(RecentServer r)
         {
@@ -1828,16 +2147,26 @@ namespace Dispatch
                 }
 
                 sounds.Play(Cue.Join);
-                Say("Rejoining " + r.Name + "…  watch the game.");
+                Say("Rejoining " + r.Name + "…  watch the game." + CopyOnJoin(link));
             }
         }
 
         // ---------- update check ----------
 
         /// <summary>At most every 12 hours; silent on any failure, and works only once the repository is public.</summary>
-        private async Task CheckForUpdateAsync()
+        private async Task CheckForUpdateAsync(bool asked = false)
         {
-            if (demo || settings.Get("updateCheck", "1") == "0")
+            if (demo)
+            {
+                if (asked)
+                {
+                    Say("Demo mode: the update check is off.");
+                }
+
+                return;
+            }
+
+            if (!asked && settings.Get("updateCheck", "1") == "0")
             {
                 return;
             }
@@ -1849,12 +2178,23 @@ namespace Dispatch
             }
 
             long.TryParse(settings.Get("updateCheckedAt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
-            if (DateTime.UtcNow - new DateTime(Math.Max(0, ticks), DateTimeKind.Utc) < UpdateCheck.Interval)
+            if (!asked && DateTime.UtcNow - new DateTime(Math.Max(0, ticks), DateTimeKind.Utc) < UpdateCheck.Interval)
             {
                 return;
             }
 
+            if (asked)
+            {
+                Say("Checking for updates…");
+            }
+
             var latest = await UpdateCheck.LatestAsync();
+            if (asked)
+            {
+                Say(latest == null ? "Couldn't check for updates right now."
+                    : UpdateCheck.IsNewer(latest, current) ? "Update available: " + latest.Tag + ". Click it in the title bar."
+                    : "You're on the latest version.");
+            }
             settings.Set("updateCheckedAt", DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
             if (latest != null)
             {
@@ -1922,7 +2262,7 @@ namespace Dispatch
                 e.Handled = true;
                 CloseFilterPopups();
             }
-            else if (e.Key == Key.F5)
+            else if (e.Key == Key.F5 || (ctrl && !shift && e.Key == Key.R))
             {
                 e.Handled = true;
                 _ = UpdateAsync(true);
@@ -1937,6 +2277,16 @@ namespace Dispatch
             {
                 e.Handled = true;
                 JoinClipboard();
+            }
+            else if (ctrl && e.Key == Key.H)
+            {
+                e.Handled = true;
+                ShowRecent();
+            }
+            else if (ctrl && e.Key == Key.D && List.SelectedItem is Server picked)
+            {
+                e.Handled = true;
+                ToggleFollow(picked);
             }
         }
 
@@ -1979,7 +2329,7 @@ namespace Dispatch
                 recent.Add(s, DateTime.UtcNow);
                 QueueSave();
                 sounds.Play(Cue.Join);
-                Say("Joining " + s.Name + "…  watch the game.");
+                Say("Joining " + s.Name + "…  watch the game." + CopyOnJoin(link));
             }
         }
 
@@ -2010,11 +2360,7 @@ namespace Dispatch
                 return;
             }
 
-            if (ConfirmLaunch() && Open(link))
-            {
-                sounds.Play(Cue.Join);
-                Say("Joining from the pasted link…  watch the game.");
-            }
+            JoinLinkNow(link);
         }
 
         /// <summary>Re-checks a server that was listed a while ago, since hosts close and lobbies change.</summary>
@@ -2201,7 +2547,7 @@ namespace Dispatch
             recent.Load(settings.GetRecords("recent"));
             autoRefresh = settings.Get("autoRefresh") == "1";
             sounds.Enabled = settings.Get("sounds", "1") == "1";
-            ShowSoundState();
+            copyOnJoin = settings.Get("copyOnJoin", "1") == "1";
             quiet = true;
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
@@ -2246,6 +2592,7 @@ namespace Dispatch
             settings.SetRecords("recent", recent.ToRecords());
             settings.Set("autoRefresh", autoRefresh ? "1" : "0");
             settings.Set("sounds", sounds.Enabled ? "1" : "0");
+            settings.Set("copyOnJoin", copyOnJoin ? "1" : "0");
             if (!string.IsNullOrEmpty(client.Location))
             {
                 settings.Set("pingLocation", client.Location);
