@@ -372,6 +372,27 @@
         </Setter>
     </Style>
 
+    <!-- A list value that filters by itself when clicked: hand cursor and underline on hover. -->
+    <Style x:Key="CellLink" TargetType="TextBlock">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Background" Value="Transparent" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="TextDecorations" Value="Underline" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="0,4" Background="{StaticResource LineBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Label" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource HeadFont}" />
         <Setter Property="FontSize" Value="12" />

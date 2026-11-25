@@ -26,7 +26,8 @@ namespace Dispatch
         private const int ClipboardUpdateMessage = 0x031D;
         private static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan MessageFor = TimeSpan.FromSeconds(6);
-        private static readonly int[] PingLimits = { 50, 100, 150 };
+        private static readonly int[] PingLimits = FilterState.PingLimits;
+        private static readonly string[] FilterKinds = { "mode", "map", "bots", "region", "ping" };
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
@@ -35,6 +36,7 @@ namespace Dispatch
         private readonly DispatcherTimer debounce;
         private readonly DispatcherTimer messageTimer;
         private readonly DispatcherTimer clock;
+        private readonly DispatcherTimer saveTimer;
         private readonly Storyboard progress;
 
         private SortKey sortKey = SortKey.Ping;
@@ -73,6 +75,17 @@ namespace Dispatch
                 if (!messageTimer.IsEnabled)
                 {
                     ShowDefaultStatus();
+                }
+            };
+
+            // Settings are saved shortly after every change, so a crash or forced close keeps them.
+            saveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            saveTimer.Tick += (s, e) =>
+            {
+                saveTimer.Stop();
+                if (!demo)
+                {
+                    SaveSettings();
                 }
             };
 
@@ -352,6 +365,7 @@ namespace Dispatch
                 {
                     Style = (Style)FindResource("Chip"),
                     Content = "≤ " + limit + " ms",
+                    Tag = limit,
                     IsChecked = browser.Filters.MaxPing == limit,
                     ToolTip = "Hide servers with a higher ping",
                 };
@@ -451,7 +465,7 @@ namespace Dispatch
             quiet = true;
             foreach (var chip in PingChips.Children.OfType<ToggleButton>())
             {
-                chip.IsChecked = on && (string)chip.Content == "≤ " + limit + " ms";
+                chip.IsChecked = on && (int)chip.Tag == limit;
             }
 
             quiet = false;
@@ -489,6 +503,7 @@ namespace Dispatch
                 {
                     Style = (Style)FindResource("Chip"),
                     Content = content,
+                    Tag = members,
                     IsChecked = members.Any(browser.Filters.Regions.Contains),
                     ToolTip = "Steam relay " + string.Join(", ", members.Select(c => c.ToUpperInvariant())) + (ping >= 0 ? "  ·  best ping " + ping + " ms" : ""),
                 };
@@ -542,6 +557,7 @@ namespace Dispatch
             FilterSummary.Text = FilterPanel.Visibility == Visibility.Visible ? "" : parts.Count == 0 ? "All servers" : string.Join("  ·  ", parts);
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
             ResetButton.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
+            QueueSave();
         }
 
         private void OnToggleFilters(object sender, RoutedEventArgs e) => SetFiltersOpen(FilterPanel.Visibility != Visibility.Visible);
@@ -698,6 +714,7 @@ namespace Dispatch
 
             UpdateHeaders();
             Render();
+            QueueSave();
         }
 
         private void UpdateHeaders()
@@ -726,10 +743,230 @@ namespace Dispatch
 
         private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (e.OriginalSource is DependencyObject d && ItemsControl.ContainerFromElement(List, d) is ListBoxItem)
+            // A double-click on a filterable value is two filter toggles, never a join.
+            if (e.OriginalSource is DependencyObject d && FilterCell(d) == null && ItemsControl.ContainerFromElement(List, d) is ListBoxItem)
             {
                 _ = JoinAsync();
             }
+        }
+
+        // ---------- click to filter ----------
+
+        private static FrameworkElement FilterCell(DependencyObject d)
+        {
+            while (d != null && !(d is ListBoxItem))
+            {
+                if (d is FrameworkElement fe && fe.Tag is string kind && FilterKinds.Contains(kind))
+                {
+                    return fe;
+                }
+
+                d = d is Visual || d is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
+            }
+
+            return null;
+        }
+
+        private void OnCellClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement cell && cell.DataContext is Server s)
+            {
+                ToggleFilter((string)cell.Tag, s);
+            }
+        }
+
+        private void OnCellTip(object sender, ToolTipEventArgs e)
+        {
+            if (!(sender is FrameworkElement cell) || !(cell.DataContext is Server s) || FilterLabel((string)cell.Tag, s) == null)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            cell.ToolTip = FilterAction((string)cell.Tag, s);
+        }
+
+        /// <summary>What a click on this value filters by, or null when it can't filter.</summary>
+        private static string FilterLabel(string kind, Server s)
+        {
+            switch (kind)
+            {
+                case "mode":
+                    return s.Mode.Length > 0 ? s.Mode : null;
+                case "map":
+                    return s.Map.Length > 0 ? s.MapName : null;
+                case "bots":
+                    return s.Bots == "true" ? "bots on" : s.Bots == "false" ? "bots off" : null;
+                case "region":
+                    return s.Region.Length > 0 ? s.RegionName : null;
+                case "ping":
+                    var limit = FilterState.LimitFor(s.Ping);
+                    return limit > 0 ? "ping ≤ " + limit + " ms" : null;
+                default:
+                    return null;
+            }
+        }
+
+        private bool IsFilterActive(string kind, Server s)
+        {
+            var f = browser.Filters;
+            switch (kind)
+            {
+                case "mode":
+                    return f.Modes.Contains(s.Mode);
+                case "map":
+                    return f.Maps.Contains(s.Map);
+                case "bots":
+                    return f.OneSidedBots == s.Bots;
+                case "region":
+                    return f.Regions.Contains(s.Region);
+                case "ping":
+                    return f.MaxPing > 0 && f.MaxPing == FilterState.LimitFor(s.Ping);
+                default:
+                    return false;
+            }
+        }
+
+        private string FilterAction(string kind, Server s)
+        {
+            var label = FilterLabel(kind, s);
+            return IsFilterActive(kind, s) ? "Remove the " + label + " filter" : "Filter by " + label;
+        }
+
+        private void ToggleFilter(string kind, Server s)
+        {
+            var label = FilterLabel(kind, s);
+            if (label == null)
+            {
+                return;
+            }
+
+            var f = browser.Filters;
+            var removing = IsFilterActive(kind, s);
+            switch (kind)
+            {
+                case "mode":
+                    Toggle(f.Modes, s.Mode, removing);
+                    break;
+                case "map":
+                    Toggle(f.Maps, s.Map, removing);
+                    break;
+                case "bots":
+                    f.Bots.Clear();
+                    if (!removing)
+                    {
+                        f.Bots.Add(s.Bots);
+                    }
+
+                    break;
+                case "region":
+                    // One city can have several relays (sto, sto2): toggle them together, like the chip.
+                    var codes = browser.Regions().Select(r => r.Code).Append(s.Region)
+                        .Where(c => Catalog.RegionName(c) == s.RegionName).Distinct(StringComparer.OrdinalIgnoreCase);
+                    foreach (var code in codes)
+                    {
+                        Toggle(f.Regions, code, removing);
+                    }
+
+                    break;
+                case "ping":
+                    f.MaxPing = removing ? 0 : FilterState.LimitFor(s.Ping);
+                    break;
+            }
+
+            SyncChips();
+            UpdateFilterSummary();
+            Render();
+            Say(removing ? "Removed the " + label + " filter." : "Filtering by " + label + ". Click it again, or Reset, to undo.");
+            if (kind == "mode" || kind == "map" || kind == "bots")
+            {
+                debounce.Stop();
+                debounce.Start();
+            }
+        }
+
+        private static void Toggle(HashSet<string> set, string value, bool remove)
+        {
+            if (remove)
+            {
+                set.Remove(value);
+            }
+            else
+            {
+                set.Add(value);
+            }
+        }
+
+        /// <summary>Makes every chip show the current filters after a change made elsewhere.</summary>
+        private void SyncChips()
+        {
+            var f = browser.Filters;
+            quiet = true;
+            foreach (var chip in ModeChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = f.Modes.Contains((string)chip.Tag);
+            }
+
+            foreach (var chip in MapChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = f.Maps.Contains((string)chip.Tag);
+            }
+
+            foreach (var chip in BotChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = f.Bots.Contains((string)chip.Tag);
+            }
+
+            foreach (var chip in PingChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = (int)chip.Tag == f.MaxPing;
+            }
+
+            foreach (var chip in RegionChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = chip.Tag is List<string> codes && codes.Any(f.Regions.Contains);
+            }
+
+            quiet = false;
+        }
+
+        private void OnRowMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            foreach (var old in RowMenu.Items.OfType<FrameworkElement>().Where(i => "filter".Equals(i.Tag)).ToList())
+            {
+                RowMenu.Items.Remove(old);
+            }
+
+            if (!(List.SelectedItem is Server s))
+            {
+                return;
+            }
+
+            var separator = new Separator { Tag = "filter" };
+            RowMenu.Items.Add(separator);
+            foreach (var kind in FilterKinds)
+            {
+                if (FilterLabel(kind, s) == null)
+                {
+                    continue;
+                }
+
+                var item = new MenuItem { Header = FilterAction(kind, s), Tag = "filter" };
+                var k = kind;
+                item.Click += (o, a) => ToggleFilter(k, s);
+                RowMenu.Items.Add(item);
+            }
+        }
+
+        private void QueueSave()
+        {
+            if (saveTimer == null)
+            {
+                return;
+            }
+
+            saveTimer.Stop();
+            saveTimer.Start();
         }
 
         private void OnListKey(object sender, KeyEventArgs e)
@@ -1018,7 +1255,8 @@ namespace Dispatch
                 client.LocationUtc = new DateTime(ticks, DateTimeKind.Utc);
             }
 
-            SetFiltersOpen(settings.Get("filters", "1") == "1");
+            // The drawer always starts closed; the bar above the list summarises the active filters.
+            SetFiltersOpen(false);
 
             var width = settings.GetDouble("width", Width);
             var height = settings.GetDouble("height", Height);
@@ -1052,7 +1290,6 @@ namespace Dispatch
             settings.SetDouble("maxPing", f.MaxPing);
             settings.Set("sort", sortKey.ToString());
             settings.Set("descending", sortDescending ? "1" : "0");
-            settings.Set("filters", FilterPanel.Visibility == Visibility.Visible ? "1" : "0");
             if (!string.IsNullOrEmpty(client.Location))
             {
                 settings.Set("pingLocation", client.Location);

@@ -146,9 +146,9 @@
                          VirtualizingPanel.IsVirtualizing="True"
                          VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel"
                          Padding="0,0,0,0" MouseDoubleClick="OnListDoubleClick" PreviewKeyDown="OnListKey"
-                         SelectionChanged="OnSelectionChanged">
+                         SelectionChanged="OnSelectionChanged" ContextMenuOpening="OnRowMenuOpening">
                     <ListBox.ContextMenu>
-                        <ContextMenu>
+                        <ContextMenu x:Name="RowMenu">
                             <MenuItem Header="Join server" InputGestureText="Enter" Click="OnJoin" />
                             <MenuItem Header="Copy invite link" InputGestureText="Ctrl+C" Click="OnCopyLink" />
                             <MenuItem Header="Copy host name" Click="OnCopyName" />
@@ -179,14 +179,25 @@
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding SlotsText}" Margin="12,0" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextDimBrush}" FontSize="15" />
-                                <TextBlock Grid.Column="2" Text="{Binding Mode}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
-                                <TextBlock Grid.Column="3" Text="{Binding MapName}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
-                                <TextBlock Grid.Column="4" Text="{Binding BotsText}" Margin="12,0" VerticalAlignment="Center" FontSize="15" />
+                                <!-- Values tagged with a filter kind toggle that filter when clicked. -->
+                                <TextBlock Grid.Column="2" Text="{Binding Mode}" Margin="12,0" VerticalAlignment="Center" FontSize="15"
+                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="mode"
+                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
+                                <TextBlock Grid.Column="3" Text="{Binding MapName}" Margin="12,0" VerticalAlignment="Center" FontSize="15"
+                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="map"
+                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
+                                <TextBlock Grid.Column="4" Text="{Binding BotsText}" Margin="12,0" VerticalAlignment="Center" FontSize="15"
+                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="bots"
+                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
                                 <TextBlock Grid.Column="5" Text="{Binding RegionName}" Margin="12,0" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis"
+                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="region"
+                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
                                 <StackPanel Grid.Column="6" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
                                     <Rectangle x:Name="PingBar" Width="3" Height="12" Margin="0,1,8,0" Fill="{StaticResource LineStrongBrush}" />
-                                    <TextBlock x:Name="PingText" Text="{Binding PingText}" FontSize="15" Foreground="{StaticResource TextFaintBrush}" />
+                                    <TextBlock x:Name="PingText" Text="{Binding PingText}" FontSize="15" Foreground="{StaticResource TextFaintBrush}"
+                                               Style="{StaticResource CellLink}" Tag="ping"
+                                               MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
                                 </StackPanel>
                             </Grid>
                             <DataTemplate.Triggers>

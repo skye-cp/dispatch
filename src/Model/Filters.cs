@@ -23,8 +23,14 @@ namespace Dispatch.Model
 
         public bool IsHostSearch => !string.IsNullOrEmpty(ExactHost);
 
+        /// <summary>The ping limits offered as filters, in ms.</summary>
+        public static readonly int[] PingLimits = { 50, 100, 150 };
+
         /// <summary>Highest ping to show, in ms; 0 means any. Servers whose ping is not known yet stay visible.</summary>
         public int MaxPing { get; set; }
+
+        /// <summary>The smallest offered limit that still includes this ping, or 0 if none does.</summary>
+        public static int LimitFor(int ping) => ping < 0 ? 0 : PingLimits.FirstOrDefault(limit => ping <= limit);
 
         public string OneSidedBots => Bots.Count == 1 ? Bots.First() : null;
 

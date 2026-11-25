@@ -29,10 +29,11 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 
 - **Every server at a glance.** About 300 at a time, against the 50 a single Steam search returns.
 - **Ping for each server.** Lowest first, estimated through Steam's relay network.
-- **Filters that combine.** Game mode, map, region, ping and bots, with several values of each.
+- **Filters that combine.** Game mode, map, region, ping and bots, with several values of each, remembered between sessions.
+- **Click to filter.** Click a mode, map, bot setting, region or ping in the list to filter by it; click again to undo.
 - **Host search.** Type a host's name to find the server a friend is playing on.
 - **Join and invite.** One click to join; invite links put friends in the same server.
-- **Light and fast.** One small executable that opens in half a second and remembers your filters.
+- **Light and fast.** One small executable that opens in half a second.
 
 ## Requirements
 
@@ -48,6 +49,8 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 
 > [!NOTE]
 > Releases are not code-signed yet, so Windows may warn about an unknown publisher on the first run. Choose **More info**, then **Run anyway**. See the [code signing policy](#code-signing-policy).
+
+To narrow the list, click a value in it (a mode, map, region and so on) or open **Filters** above it. The bar next to Filters summarises what is active, and **Reset** clears everything.
 
 ### Play with a friend
 
@@ -71,7 +74,15 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 <summary><b>Is it safe to use with Easy Anti-Cheat?</b></summary>
 <br>
 
-Dispatch never reads or writes the game's memory, files or network traffic, injects nothing and sends no input to the game. It talks only to Steam, the way Steam's own invites do. It is still an unofficial tool, so use it at your own risk.
+Dispatch never reads or writes the game's memory, files or network traffic, injects nothing and sends no input to the game. It talks only to Steam, the way Steam's own invites do.
+
+</details>
+
+<details>
+<summary><b>Is it allowed?</b></summary>
+<br>
+
+Dispatch is unofficial and not endorsed by Reissad Studio. It gives no gameplay advantage: it shows the same public server list the game uses. However, Bodycam's terms prohibit "unauthorized programs" in connection with the game's online features, and Steam's terms restrict unauthorized third-party software, without defining either. Enforcement is at their discretion, so **use Dispatch at your own risk**. If Reissad Studio or Valve asks for it to be taken down, it will be.
 
 </details>
 
@@ -103,7 +114,7 @@ Join from Bodycam's main menu: opening a link while the game is closed has faile
 <summary><b>Why does Steam show me in Bodycam for a moment?</b></summary>
 <br>
 
-Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list.
+Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list, which Steam counts as a moment of Bodycam playtime.
 
 </details>
 
@@ -116,7 +127,7 @@ Each lookup briefly runs as Bodycam's Steam app (about a second) to read the gam
 
 ## Privacy
 
-Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. It keeps your filters, window position and measured relay position in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`. It sends nothing anywhere beyond the Steam requests above.
+Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. It saves your filters, sort order, window position and measured relay position as you change them, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`. It sends nothing anywhere beyond the Steam requests above.
 
 ## Development
 
