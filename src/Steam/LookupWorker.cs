@@ -72,6 +72,7 @@ namespace Dispatch.Steam
             try
             {
                 var ping = Pinger.Start(knownLocation);
+                WriteFriends(output);
                 var matchmaking = SteamAPI_SteamMatchmaking_v009();
                 var utils = SteamAPI_SteamUtils_v010();
                 for (var i = 0; i < queries.Count; i++)
@@ -87,6 +88,34 @@ namespace Dispatch.Steam
             }
 
             return 0;
+        }
+
+        /// <summary>
+        /// Reports the player's Steam friends so the window can mark servers they host. Read from the
+        /// local Steam client; the window keeps it in memory only.
+        /// </summary>
+        private static void WriteFriends(TextWriter output)
+        {
+            try
+            {
+                var friends = SteamAPI_SteamFriends_v017();
+                if (friends == IntPtr.Zero)
+                {
+                    return;
+                }
+
+                var count = SteamAPI_ISteamFriends_GetFriendCount(friends, FriendFlagImmediate);
+                for (var i = 0; i < count; i++)
+                {
+                    var id = SteamAPI_ISteamFriends_GetFriendByIndex(friends, i, FriendFlagImmediate);
+                    var name = FromUtf8(SteamAPI_ISteamFriends_GetFriendPersonaName(friends, id));
+                    output.WriteLine(Protocol.EncodeFriend(id.ToString(CultureInfo.InvariantCulture), name));
+                }
+            }
+            catch (EntryPointNotFoundException)
+            {
+                // An unknown library version: friends simply aren't marked.
+            }
         }
 
         private static void RunOne(int index, LobbyQuery query, IntPtr matchmaking, IntPtr utils, Pinger ping, TextWriter output)

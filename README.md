@@ -31,8 +31,11 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Ping for each server.** Lowest first, estimated through Steam's relay network.
 - **Filters that combine.** Game mode, map, region, ping and bots, with several values of each, remembered between sessions.
 - **Click to filter.** Click a mode, map, bot setting, region or ping in the list to filter by it; click again to undo.
+- **Friends first.** Servers hosted by your Steam friends are marked and pinned to the top.
+- **Follow hosts.** Star a host to pin their server and get an alert when it appears.
 - **Host search.** Type a host's name to find the server a friend is playing on.
-- **Join and invite.** One click to join; invite links put friends in the same server.
+- **Join, invite, rejoin.** One click to join; invite links put friends in the same server; **Recent** rejoins a host after a disconnect.
+- **Auto-refresh.** Optional, every minute while Dispatch is in focus, with new servers marked.
 - **Light and fast.** One small executable that opens in half a second.
 
 ## Requirements
@@ -55,7 +58,8 @@ To narrow the list, click a value in it (a mode, map, region and so on) or open 
 ### Play with a friend
 
 - **Bring them to your server.** Select it, press **Copy invite link** and send the link. Your friend opens it with Bodycam running, either with **Join pasted link** in Dispatch or by pasting it into <kbd>Win</kbd>+<kbd>R</kbd>.
-- **Go to theirs.** Type their server's host name, the name shown in the game's server list, and press <kbd>Enter</kbd>.
+- **Go to theirs.** If they host it, it is already at the top, marked **FRIEND**. Otherwise type their server's host name, the name shown in the game's server list, and press <kbd>Enter</kbd>.
+- **Wait for them.** Click the star next to a host's name. While Dispatch is open, it checks every minute and alerts you (a sound and a flashing taskbar button) when that host's server appears.
 
 ### Shortcuts
 
@@ -114,7 +118,7 @@ Join from Bodycam's main menu: opening a link while the game is closed has faile
 <summary><b>Why does Steam show me in Bodycam for a moment?</b></summary>
 <br>
 
-Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list, which Steam counts as a moment of Bodycam playtime.
+Each lookup briefly runs as Bodycam's Steam app (about a second) to read the game's server list, which Steam counts as a moment of Bodycam playtime. Auto-refresh and following hosts repeat that once a minute while Dispatch is open.
 
 </details>
 
@@ -127,7 +131,9 @@ Each lookup briefly runs as Bodycam's Steam app (about a second) to read the gam
 
 ## Privacy
 
-Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. It saves your filters, sort order, window position and measured relay position as you change them, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`. It sends nothing anywhere beyond the Steam requests above.
+Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. To mark friends' servers it reads your Steam friends list from the Steam client; that stays in memory and is never saved or sent. It saves your filters, sort order, followed hosts, recent servers, window position and measured relay position as you change them, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`.
+
+Besides the Steam requests above, Dispatch makes one other network request: at most every 12 hours it asks GitHub for the latest release, to show an *Update available* link. The request carries no personal data. To turn it off, add `updateCheck=0` to `%APPDATA%\Dispatch\settings.ini`.
 
 ## Development
 
@@ -156,7 +162,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 - Only release builds from this repository's release workflow are signed, each after manual approval.
 - Committers and reviewers: [skye-cp](https://github.com/skye-cp). Approvers: [skye-cp](https://github.com/skye-cp).
-- Privacy: apart from the Steam requests it exists to make (listing public lobbies and measuring relay ping), Dispatch will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+- Privacy: apart from the Steam requests it exists to make (listing public lobbies and measuring relay ping) and an optional check for new releases on GitHub (see [Privacy](#privacy)), Dispatch will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
 ## License
 

@@ -33,6 +33,9 @@ namespace Dispatch.Steam
 
         private bool LocationFresh => !string.IsNullOrEmpty(Location) && DateTime.UtcNow - LocationUtc < LocationMaxAge;
 
+        /// <summary>The player's Steam friends (SteamID → name) from the latest lookup. Memory only.</summary>
+        public IReadOnlyDictionary<string, string> Friends { get; private set; } = new Dictionary<string, string>();
+
         /// <param name="onAnswer">Called on a worker thread with each request's index and servers.</param>
         /// <param name="onPings">Called on a worker thread with pings measured after the servers were listed.</param>
         public Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
@@ -98,6 +101,7 @@ namespace Dispatch.Steam
 
                     var pending = new List<Server>();
                     var pings = new Dictionary<string, int>();
+                    var friends = new Dictionary<string, string>();
                     string error = null;
                     var answered = 0;
                     string line;
@@ -133,6 +137,13 @@ namespace Dispatch.Steam
                                 }
 
                                 break;
+                            case Protocol.FriendRecord:
+                                if (Protocol.TryDecodeFriend(f, out var friendId, out var friendName))
+                                {
+                                    friends[friendId] = friendName;
+                                }
+
+                                break;
                             case Protocol.PingRecord:
                                 if (Protocol.TryDecodePing(f, out var lobby, out var ms))
                                 {
@@ -141,6 +152,11 @@ namespace Dispatch.Steam
 
                                 break;
                         }
+                    }
+
+                    if (friends.Count > 0)
+                    {
+                        Friends = friends;
                     }
 
                     if (pings.Count > 0)

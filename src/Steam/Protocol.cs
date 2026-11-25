@@ -20,6 +20,7 @@ namespace Dispatch.Steam
         public const string ErrorRecord = "E";
         public const string LocationRecord = "P";
         public const string PingRecord = "G";
+        public const string FriendRecord = "R";
 
         private const string LocationHeader = "@location";
         private const char FieldSep = '\t';
@@ -103,6 +104,15 @@ namespace Dispatch.Steam
             lobby = f.Length > 1 ? f[1] : null;
             ms = Server.NoPing;
             return f.Length > 2 && int.TryParse(f[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out ms);
+        }
+
+        public static string EncodeFriend(string steamId, string name) => Join(FriendRecord, steamId, name);
+
+        public static bool TryDecodeFriend(string[] f, out string steamId, out string name)
+        {
+            steamId = f.Length > 1 ? f[1] : null;
+            name = f.Length > 2 ? f[2] : "";
+            return !string.IsNullOrEmpty(steamId);
         }
 
         public static string[] Split(string line) => line.Split(FieldSep);

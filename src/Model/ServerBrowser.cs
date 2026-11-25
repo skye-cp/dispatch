@@ -36,6 +36,7 @@ namespace Dispatch.Model
     internal sealed class ServerBrowser
     {
         private readonly Dictionary<string, Entry> cache = new Dictionary<string, Entry>();
+        private readonly Dictionary<string, DateTime> firstSeen = new Dictionary<string, DateTime>();
 
         public FilterState Filters { get; } = new FilterState();
 
@@ -47,8 +48,17 @@ namespace Dispatch.Model
         public List<LobbyQuery> Missing(DateTime nowUtc) =>
             Plan().Where(q => !cache.TryGetValue(q.Key, out var e) || nowUtc - e.FetchedUtc > MaxAge).ToList();
 
-        public void Store(LobbyQuery query, IReadOnlyList<Server> servers, DateTime nowUtc) =>
+        public void Store(LobbyQuery query, IReadOnlyList<Server> servers, DateTime nowUtc)
+        {
             cache[query.Key] = new Entry(servers, nowUtc);
+            foreach (var s in servers)
+            {
+                if (!firstSeen.ContainsKey(s.Id))
+                {
+                    firstSeen[s.Id] = nowUtc;
+                }
+            }
+        }
 
         public void Invalidate() => cache.Clear();
 
@@ -107,7 +117,21 @@ namespace Dispatch.Model
             return byId.Values.ToList();
         }
 
+        /// <summary>Every server Steam has returned and is still cached, whatever the filters.</summary>
+        public List<Server> All() =>
+            cache.Values.SelectMany(e => e.Servers).GroupBy(s => s.Id).Select(g => g.First()).ToList();
+
+        /// <summary>When each server was first returned this session, for highlighting new arrivals.</summary>
+        public DateTime FirstSeenUtc(string id) => firstSeen.TryGetValue(id, out var t) ? t : DateTime.MinValue;
+
+        /// <summary>The visible list. Friends' and followed servers stay on top whatever the sort.</summary>
         public List<Server> Visible(SortKey key, bool descending)
+        {
+            var sorted = SortedVisible(key, descending);
+            return sorted.Where(s => s.IsPinned).Concat(sorted.Where(s => !s.IsPinned)).ToList();
+        }
+
+        private List<Server> SortedVisible(SortKey key, bool descending)
         {
             var list = Pool().Where(Filters.Matches);
             IOrderedEnumerable<Server> sorted;

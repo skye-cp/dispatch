@@ -25,6 +25,22 @@ namespace Dispatch.Model
 
         public DateTime SeenUtc { get; set; }
 
+        /// <summary>Set by the window: the host is one of the player's Steam friends.</summary>
+        public bool IsFriend { get; set; }
+
+        /// <summary>Set by the window: the friend's Steam name, when <see cref="IsFriend"/>.</summary>
+        public string FriendName { get; set; } = "";
+
+        /// <summary>Set by the window: the player follows this host.</summary>
+        public bool IsFollowed { get; set; }
+
+        /// <summary>Set by the window: the server appeared after the list first loaded.</summary>
+        public bool IsNew { get; set; }
+
+        public bool IsPinned => IsFriend || IsFollowed;
+
+        public string FriendTip => IsFriend ? "Hosted by your Steam friend " + FriendName : null;
+
         public string MapName => Catalog.MapName(Map);
         public string RegionName => Catalog.RegionName(Region);
         public string BotsText => Bots == "true" ? "On" : Bots == "false" ? "Off" : "—";

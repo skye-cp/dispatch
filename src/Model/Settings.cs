@@ -75,6 +75,13 @@ namespace Dispatch.Model
         public void SetList(string key, IEnumerable<string> items) =>
             Set(key, string.Join(",", items.Where(i => i.IndexOf(',') < 0)));
 
+        /// <summary>Lists of records whose fields may hold any text (host names), escaped so separators can't clash.</summary>
+        public IEnumerable<string[]> GetRecords(string key) =>
+            GetList(key).Select(r => r.Split('|').Select(Uri.UnescapeDataString).ToArray());
+
+        public void SetRecords(string key, IEnumerable<string[]> records) =>
+            Set(key, string.Join(",", records.Select(r => string.Join("|", r.Select(f => Uri.EscapeDataString(f ?? ""))))));
+
         public double GetDouble(string key, double fallback) =>
             double.TryParse(Get(key), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
 
