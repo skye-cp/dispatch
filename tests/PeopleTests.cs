@@ -86,10 +86,14 @@ namespace Dispatch.Tests
             b.Store(b.Plan()[0], new[] { S("1", "a", "x") }, t0);
             b.Invalidate();
             b.Store(b.Plan()[0], new[] { S("1", "a", "x"), S("2", "b", "y") }, t0.AddMinutes(1));
-            Assert.Equal(t0, b.FirstSeenUtc("1"));
+            Assert.Equal(DateTime.MinValue, b.FirstSeenUtc("1"));
             Assert.Equal(t0.AddMinutes(1), b.FirstSeenUtc("2"));
+
+            // A search never run before shows existing servers, not new ones.
+            b.Store(b.Plan()[1], new[] { S("4", "d", "z") }, t0.AddMinutes(2));
+            Assert.Equal(DateTime.MinValue, b.FirstSeenUtc("4"));
             Assert.Equal(DateTime.MinValue, b.FirstSeenUtc("3"));
-            Assert.Equal(2, b.All().Count);
+            Assert.Equal(3, b.All().Count);
         }
 
         [Fact]

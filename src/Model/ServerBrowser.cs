@@ -38,6 +38,7 @@ namespace Dispatch.Model
     {
         private readonly Dictionary<string, Entry> cache = new Dictionary<string, Entry>();
         private readonly Dictionary<string, DateTime> firstSeen = new Dictionary<string, DateTime>();
+        private readonly HashSet<string> searched = new HashSet<string>();
         private readonly Dictionary<string, string> lastState = new Dictionary<string, string>();
         private readonly Dictionary<string, DateTime> roundStart = new Dictionary<string, DateTime>();
 
@@ -53,12 +54,15 @@ namespace Dispatch.Model
 
         public void Store(LobbyQuery query, IReadOnlyList<Server> servers, DateTime nowUtc)
         {
+            // Only a repeat of a search can reveal new arrivals; a first search (say, after widening the
+            // filters) just shows servers Dispatch hadn't looked at yet.
+            var repeat = !searched.Add(query.Key);
             cache[query.Key] = new Entry(servers, nowUtc);
             foreach (var s in servers)
             {
                 if (!firstSeen.ContainsKey(s.Id))
                 {
-                    firstSeen[s.Id] = nowUtc;
+                    firstSeen[s.Id] = repeat ? nowUtc : DateTime.MinValue;
                 }
 
                 // A host keeps their lobby across rounds; a new map or mode means a new round began.

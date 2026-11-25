@@ -72,12 +72,15 @@ namespace Dispatch.Tests
         public void AgeFilterBucketsAndMatches()
         {
             Assert.Equal(15, FilterState.AgeLimitFor(3));
+            Assert.Equal(30, FilterState.AgeLimitFor(25));
             Assert.Equal(60, FilterState.AgeLimitFor(40));
             Assert.Equal(-60, FilterState.AgeLimitFor(90));
             Assert.Equal(0, FilterState.AgeLimitFor(-1));
             Assert.Equal("Under 15 min", FilterState.AgeLimitText(15));
             Assert.Equal("Under 1 h", FilterState.AgeLimitText(60));
             Assert.Equal("Over 1 h", FilterState.AgeLimitText(-60));
+            Assert.Equal("Over 15 min", FilterState.AgeLimitText(-15));
+            Assert.Equal("Under 30 min", FilterState.AgeLimitText(30));
 
             var f = new FilterState { AgeLimit = 15 };
             Assert.True(f.Matches(new Server { Name = "a", Mode = "Zombie", AgeMinutes = 10 }));

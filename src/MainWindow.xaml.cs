@@ -67,6 +67,10 @@ namespace Dispatch
         private DateTime playersCheckedUtc = DateTime.MinValue;
         private static readonly TimeSpan NewRoundFor = TimeSpan.FromMinutes(5);
         private readonly LobbyAge lobbyAge = new LobbyAge();
+        private readonly System.Collections.ObjectModel.ObservableCollection<Server> rows = new System.Collections.ObjectModel.ObservableCollection<Server>();
+        private readonly Dictionary<string, Server> shown = new Dictionary<string, Server>();
+        private readonly Sounds sounds = new Sounds();
+        private int ticks;
 
         /// <param name="demo">Shows invented servers and leaves Steam and saved settings alone (for screenshots).</param>
         public MainWindow(bool demo = false)
@@ -74,6 +78,7 @@ namespace Dispatch
             this.demo = demo;
             settings = demo ? new Settings() : Settings.Load();
             InitializeComponent();
+            List.ItemsSource = rows;
 
             debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             debounce.Tick += (s, e) =>
@@ -94,9 +99,15 @@ namespace Dispatch
                 {
                     ShowDefaultStatus();
                 }
+
+                // Ages tick on their own, between refreshes.
+                if (++ticks % 30 == 0 && !Busy)
+                {
+                    Render();
+                }
             };
 
-            // Every minute: auto-refresh while focused (if on), otherwise a quiet check on followed hosts.
+            // Every minute: auto-refresh (if on), then a quiet check on followed hosts.
             watchTimer = new DispatcherTimer { Interval = WatchEvery };
             watchTimer.Tick += (s, e) => OnWatchTick();
 
@@ -127,6 +138,7 @@ namespace Dispatch
 
             Loaded += (s, e) =>
             {
+                Motion.Fade(Frame, 0, 1, 260);
                 clock.Start();
                 watchTimer.Start();
                 _ = UpdateAsync(false);
@@ -292,14 +304,9 @@ namespace Dispatch
 
         private void Render()
         {
-            var selected = (List.SelectedItem as Server)?.Owner;
             Annotate();
             var visible = browser.Visible(sortKey, sortDescending);
-            List.ItemsSource = visible;
-            if (selected != null)
-            {
-                List.SelectedItem = visible.FirstOrDefault(s => s.Owner == selected);
-            }
+            ApplyRows(visible);
 
             HeadName.Content = HeaderText(SortKey.Name, "SERVERS (" + visible.Count + ")");
             UpdateRegionChips();
@@ -367,6 +374,298 @@ namespace Dispatch
             }
         }
 
+        // ---------- the list, updated in place ----------
+
+        /// <summary>Above this many additions and removals at once (a filter change), skip the row animations.</summary>
+        private const int MaxAnimatedChanges = 40;
+
+        /// <summary>
+        /// Turns the visible list into the rows on screen without rebuilding: rows stay the same objects and
+        /// take new values in place, servers that left fade out, new ones grow in, and moved rows slide.
+        /// </summary>
+        private void ApplyRows(List<Server> target)
+        {
+            var wanted = new List<Server>(target.Count);
+            var wantedIds = new HashSet<string>();
+            var added = 0;
+            foreach (var s in target)
+            {
+                wantedIds.Add(s.Id);
+                if (shown.TryGetValue(s.Id, out var row))
+                {
+                    if (!ReferenceEquals(row, s))
+                    {
+                        row.CopyFrom(s);
+                    }
+
+                    row.IsLeaving = false;
+                    wanted.Add(row);
+                }
+                else
+                {
+                    wanted.Add(s);
+                    added++;
+                }
+            }
+
+            var leaving = rows.Where(r => !wantedIds.Contains(r.Id) && !r.IsLeaving).ToList();
+            var animate = Motion.Enabled && IsLoaded && rows.Count > 0 && added + leaving.Count <= MaxAnimatedChanges;
+            var before = animate ? RowPositions() : null;
+
+            foreach (var row in leaving)
+            {
+                if (animate && List.ItemContainerGenerator.ContainerFromItem(row) is ListBoxItem item && item.IsVisible)
+                {
+                    row.IsLeaving = true;
+                    Motion.Fade(item, 1, 0, 160);
+                    Motion.ScaleHeight(item, 1, 0, 180, () =>
+                    {
+                        if (row.IsLeaving)
+                        {
+                            rows.Remove(row);
+                            shown.Remove(row.Id);
+                        }
+
+                        item.Opacity = 1;
+                        Motion.ScaleHeight(item, 1, 1, 0);
+                    });
+                }
+                else
+                {
+                    rows.Remove(row);
+                    shown.Remove(row.Id);
+                }
+            }
+
+            // Put the wanted rows in order, leaving fading rows where they are.
+            var entering = new List<Server>();
+            var position = 0;
+            foreach (var want in wanted)
+            {
+                var index = IndexOfActive(position);
+                if (index < rows.Count && ReferenceEquals(rows[index], want))
+                {
+                    position++;
+                    continue;
+                }
+
+                var current = rows.IndexOf(want);
+                if (current >= 0)
+                {
+                    rows.Move(current, current < index ? index - 1 : index);
+                }
+                else
+                {
+                    rows.Insert(index, want);
+                    shown[want.Id] = want;
+                    entering.Add(want);
+                }
+
+                position++;
+            }
+
+            if (!animate)
+            {
+                return;
+            }
+
+            List.UpdateLayout();
+            var after = RowPositions();
+            foreach (var row in entering)
+            {
+                if (List.ItemContainerGenerator.ContainerFromItem(row) is ListBoxItem item)
+                {
+                    Motion.ScaleHeight(item, 0, 1, 220);
+                    Motion.Fade(item, 0, 1, 260);
+                }
+            }
+
+            foreach (var pair in after)
+            {
+                if (before.TryGetValue(pair.Key, out var oldY) && !entering.Contains(pair.Key) &&
+                    List.ItemContainerGenerator.ContainerFromItem(pair.Key) is ListBoxItem item)
+                {
+                    Motion.SlideFrom(item, oldY - pair.Value, 240);
+                }
+            }
+        }
+
+        /// <summary>Index in <see cref="rows"/> of the n-th row that isn't fading out.</summary>
+        private int IndexOfActive(int n)
+        {
+            for (var i = 0; i < rows.Count; i++)
+            {
+                if (!rows[i].IsLeaving && n-- == 0)
+                {
+                    return i;
+                }
+            }
+
+            return rows.Count;
+        }
+
+        /// <summary>Where each on-screen row currently sits, for sliding moved rows into place.</summary>
+        private Dictionary<Server, double> RowPositions()
+        {
+            var positions = new Dictionary<Server, double>();
+            foreach (var row in rows)
+            {
+                if (List.ItemContainerGenerator.ContainerFromItem(row) is ListBoxItem item && item.IsVisible)
+                {
+                    positions[row] = item.TranslatePoint(new Point(0, 0), List).Y;
+                }
+            }
+
+            return positions;
+        }
+
+        // ---------- pull to refresh ----------
+
+        /// <summary>Wheel travel past the edge, in wheel units (120 a notch), that triggers a refresh.</summary>
+        private const double PullThreshold = 300;
+        private const double PullMaxShift = 84;
+        private static readonly TimeSpan PullGap = TimeSpan.FromMilliseconds(180);
+        private ScrollViewer listScroll;
+        private DispatcherTimer pullRelease;
+        private double pull;
+        private bool pullArmed;
+        private DateTime lastWheelUtc;
+
+        /// <summary>
+        /// Scrolling on past the top or bottom pulls the list like a rubber band. Only a fresh gesture
+        /// counts: scrolling hard into the edge never carries through, and pausing lets the pull go.
+        /// </summary>
+        private void OnListWheel(object sender, MouseWheelEventArgs e)
+        {
+            var sv = listScroll ?? (listScroll = FindChild<ScrollViewer>(List));
+            if (sv == null)
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            var freshGesture = now - lastWheelUtc > PullGap;
+            lastWheelUtc = now;
+            var atTop = sv.VerticalOffset <= 0.5;
+            var atBottom = sv.VerticalOffset >= sv.ScrollableHeight - 0.5;
+
+            if (pull != 0)
+            {
+                // Mid-pull: pulling further or easing back, never scrolling.
+                var next = pull + e.Delta;
+                pull = Math.Sign(next) == Math.Sign(pull) ? next : 0;
+                e.Handled = true;
+                ShowPull();
+                RestartPullRelease();
+                return;
+            }
+
+            var intoEdge = (e.Delta > 0 && atTop) || (e.Delta < 0 && atBottom);
+            if (!intoEdge)
+            {
+                pullArmed = false;
+                return;
+            }
+
+            e.Handled = true;
+            if (freshGesture || pullArmed)
+            {
+                pullArmed = true;
+                pull = e.Delta;
+                ShowPull();
+                RestartPullRelease();
+            }
+        }
+
+        private void RestartPullRelease()
+        {
+            if (pullRelease == null)
+            {
+                pullRelease = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+                pullRelease.Tick += (s, e) => ReleasePull();
+            }
+
+            pullRelease.Stop();
+            pullRelease.Start();
+        }
+
+        private void ShowPull()
+        {
+            var amount = Math.Abs(pull);
+            var shift = PullMaxShift * (1 - Math.Exp(-amount / 220));
+            PullShift.BeginAnimation(TranslateTransform.YProperty, null);
+            PullShift.Y = pull > 0 ? shift : -shift;
+            var ready = amount >= PullThreshold;
+            var label = ready ? "RELEASE TO REFRESH" : "PULL TO REFRESH";
+            var progress = Math.Min(1, amount / PullThreshold);
+            var (panel, text, icon) = pull > 0 ? (PullTop, PullTopText, PullTopIcon) : (PullBottom, PullBottomText, PullBottomIcon);
+            panel.BeginAnimation(OpacityProperty, null);
+            panel.Opacity = Math.Min(1, amount / 120);
+            text.Text = label;
+            text.Foreground = (Brush)FindResource(ready ? "TextBrush" : "TextDimBrush");
+            ((RotateTransform)icon.RenderTransform).Angle = progress * 270;
+        }
+
+        private void ReleasePull()
+        {
+            pullRelease.Stop();
+            var trigger = Math.Abs(pull) >= PullThreshold && !Busy;
+            var panel = pull > 0 ? PullTop : PullBottom;
+            var spring = new DoubleAnimation(0, TimeSpan.FromMilliseconds(trigger ? 320 : 220)) { EasingFunction = Motion.Out };
+            PullShift.BeginAnimation(TranslateTransform.YProperty, spring);
+            Motion.Fade(panel, panel.Opacity, 0, 260);
+            pull = 0;
+            pullArmed = false;
+            if (trigger)
+            {
+                sounds.Play(Cue.Pull);
+                _ = UpdateAsync(true);
+            }
+        }
+
+        /// <summary>Stops Windows' "whole window bounces" effect when a touch scroll hits the edge.</summary>
+        private void OnBoundaryFeedback(object sender, ManipulationBoundaryFeedbackEventArgs e) => e.Handled = true;
+
+        private static T FindChild<T>(DependencyObject parent)
+            where T : DependencyObject
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T match)
+                {
+                    return match;
+                }
+
+                var deeper = FindChild<T>(child);
+                if (deeper != null)
+                {
+                    return deeper;
+                }
+            }
+
+            return null;
+        }
+
+        // ---------- sounds ----------
+
+        private void OnSoundToggle(object sender, RoutedEventArgs e)
+        {
+            sounds.Enabled = !sounds.Enabled;
+            ShowSoundState();
+            QueueSave();
+            if (sounds.Enabled)
+            {
+                sounds.Play(Cue.Copy);
+            }
+        }
+
+        private void ShowSoundState()
+        {
+            SoundButton.Content = sounds.Enabled ? "" : "";
+            SoundButton.ToolTip = sounds.Enabled ? "Sounds on. Click to mute." : "Sounds muted. Click to turn on.";
+        }
+
         // ---------- status ----------
 
         private void ShowDefaultStatus()
@@ -403,6 +702,7 @@ namespace Dispatch
         {
             Status.Text = text;
             Status.Foreground = (Brush)FindResource(problem ? "RedHotBrush" : "TextBrush");
+            Motion.Fade(Status, 0, 1, 220);
             messageTimer.Stop();
             messageTimer.Start();
         }
@@ -655,11 +955,31 @@ namespace Dispatch
             QueueSave();
         }
 
-        private void OnToggleFilters(object sender, RoutedEventArgs e) => SetFiltersOpen(FilterPanel.Visibility != Visibility.Visible);
+        private void OnToggleFilters(object sender, RoutedEventArgs e) => SetFiltersOpen(FilterPanel.Visibility != Visibility.Visible, animate: true);
 
-        private void SetFiltersOpen(bool open)
+        private void SetFiltersOpen(bool open, bool animate = false)
         {
-            FilterPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            if (!animate || !IsLoaded)
+            {
+                FilterPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else if (open)
+            {
+                FilterPanel.Visibility = Visibility.Visible;
+                Motion.ScaleHeight(FilterPanel, 0, 1, 220);
+                Motion.Fade(FilterPanel, 0, 1, 220);
+            }
+            else
+            {
+                Motion.Fade(FilterPanel, 1, 0, 160);
+                Motion.ScaleHeight(FilterPanel, 1, 0, 180, () =>
+                {
+                    FilterPanel.Visibility = Visibility.Collapsed;
+                    Motion.ScaleHeight(FilterPanel, 1, 1, 0);
+                    FilterPanel.Opacity = 1;
+                });
+            }
+
             FilterChevron.Text = open ? "" : "";
             FilterToggle.ToolTip = open ? "Hide filters" : "Show filters";
             UpdateFilterSummary();
@@ -1131,7 +1451,7 @@ namespace Dispatch
                 ? "★ " + first.Name + " is hosting " + first.Mode + " on " + first.MapName + "."
                 : "★ " + string.Join(", ", appeared.Select(s => s.Name)) + " are hosting.";
             Say(text);
-            System.Media.SystemSounds.Exclamation.Play();
+            sounds.Play(Cue.Alert);
             if (!IsActive)
             {
                 FlashTaskbar();
@@ -1169,7 +1489,7 @@ namespace Dispatch
                 return;
             }
 
-            if (autoRefresh && IsActive)
+            if (autoRefresh)
             {
                 await UpdateAsync(true);
             }
@@ -1226,7 +1546,7 @@ namespace Dispatch
             autoRefresh = AutoToggle.IsChecked == true;
             QueueSave();
             Say(autoRefresh
-                ? "Auto-refresh on: every minute while Dispatch is in focus. New servers get a red mark."
+                ? "Auto-refresh on: every minute while Dispatch is open. New servers get a red mark."
                 : "Auto-refresh off.");
         }
 
@@ -1325,6 +1645,7 @@ namespace Dispatch
                     QueueSave();
                 }
 
+                sounds.Play(Cue.Join);
                 Say("Rejoining " + r.Name + "…  watch the game.");
             }
         }
@@ -1470,6 +1791,7 @@ namespace Dispatch
             {
                 recent.Add(s, DateTime.UtcNow);
                 QueueSave();
+                sounds.Play(Cue.Join);
                 Say("Joining " + s.Name + "…  watch the game.");
             }
         }
@@ -1487,6 +1809,7 @@ namespace Dispatch
             {
                 lastCopied = link;
                 ClipboardButton.Visibility = Visibility.Collapsed;
+                sounds.Play(Cue.Copy);
                 Say("Invite link for " + s.Name + " copied. Your friend opens it with Bodycam running.");
             }
         }
@@ -1501,6 +1824,7 @@ namespace Dispatch
 
             if (ConfirmLaunch() && Open(link))
             {
+                sounds.Play(Cue.Join);
                 Say("Joining from the pasted link…  watch the game.");
             }
         }
@@ -1688,6 +2012,8 @@ namespace Dispatch
             }
             recent.Load(settings.GetRecords("recent"));
             autoRefresh = settings.Get("autoRefresh") == "1";
+            sounds.Enabled = settings.Get("sounds", "1") == "1";
+            ShowSoundState();
             quiet = true;
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
@@ -1732,6 +2058,7 @@ namespace Dispatch
             settings.SetRecords("followed", follows.ToRecords());
             settings.SetRecords("recent", recent.ToRecords());
             settings.Set("autoRefresh", autoRefresh ? "1" : "0");
+            settings.Set("sounds", sounds.Enabled ? "1" : "0");
             if (!string.IsNullOrEmpty(client.Location))
             {
                 settings.Set("pingLocation", client.Location);
