@@ -36,6 +36,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 - **Host search.** Type a host's name to find the server a friend is playing on.
 - **Join, invite, rejoin.** One click to join; invite links put friends in the same server; **Recent** rejoins a host after a disconnect.
 - **Auto-refresh.** Optional, every minute while Dispatch is in focus, with new servers marked.
+- **Players online.** How many people are playing Bodycam right now, from Steam.
 - **Light and fast.** One small executable that opens in half a second.
 
 ## Requirements
@@ -94,7 +95,7 @@ Dispatch is unofficial and not endorsed by Reissad Studio. It gives no gameplay 
 <summary><b>Why are there no player counts?</b></summary>
 <br>
 
-Steam doesn't publish them for Bodycam servers. <i>Slots</i> is the server's size. If a server turns out to be full, the game says the connection failed and returns to the menu.
+Steam doesn't publish them for Bodycam servers: players connect to a host without joining its Steam lobby, so only the host is listed. <i>Slots</i> is the server's size, and the status line shows how many people are playing Bodycam in total. If a server turns out to be full, the game says the connection failed and returns to the menu.
 
 </details>
 
@@ -133,7 +134,7 @@ Each lookup briefly runs as Bodycam's Steam app (about a second) to read the gam
 
 Dispatch reads only public lobby data: host name, mode, map, bots, size and relay ping data. To mark friends' servers it reads your Steam friends list from the Steam client; that stays in memory and is never saved or sent. It saves your filters, sort order, followed hosts, recent servers, window position and measured relay position as you change them, in `%APPDATA%\Dispatch`, and its copy of Steam's library in `%LOCALAPPDATA%\Dispatch`.
 
-Besides the Steam requests above, Dispatch makes one other network request: at most every 12 hours it asks GitHub for the latest release, to show an *Update available* link. The request carries no personal data. To turn it off, add `updateCheck=0` to `%APPDATA%\Dispatch\settings.ini`.
+It also asks Steam's public Web API how many people are playing Bodycam, at most once a minute. Besides these Steam requests, Dispatch makes one other network request: at most every 12 hours it asks GitHub for the latest release, to show an *Update available* link. The request carries no personal data. To turn it off, add `updateCheck=0` to `%APPDATA%\Dispatch\settings.ini`.
 
 ## Development
 
@@ -162,7 +163,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 - Only release builds from this repository's release workflow are signed, each after manual approval.
 - Committers and reviewers: [skye-cp](https://github.com/skye-cp). Approvers: [skye-cp](https://github.com/skye-cp).
-- Privacy: apart from the Steam requests it exists to make (listing public lobbies and measuring relay ping) and an optional check for new releases on GitHub (see [Privacy](#privacy)), Dispatch will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+- Privacy: apart from the Steam requests it exists to make (listing public lobbies, measuring relay ping and reading the total player count) and an optional check for new releases on GitHub (see [Privacy](#privacy)), Dispatch will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
 ## License
 
