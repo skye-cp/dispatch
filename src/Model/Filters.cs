@@ -314,6 +314,12 @@ namespace Dispatch.Model
             var bots = f.OneSidedBots;
             var perMap = maps.Count > 0 && modes.Count * maps.Count <= MaxQueries;
 
+            // Maps picked but no mode, too many to ask per mode and map: ask once per map, any mode but Training.
+            if (!perMap && maps.Count > 0 && f.Modes.Count == 0)
+            {
+                return maps.Select(map => LobbyQuery.OnMap(map, bots)).ToList();
+            }
+
             var plan = new List<LobbyQuery>();
             foreach (var mode in modes)
             {

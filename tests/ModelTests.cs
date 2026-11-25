@@ -31,7 +31,7 @@ namespace Dispatch.Tests
         }
 
         [Fact]
-        public void PlanFallsBackToPerModeWhenTooManyCombinations()
+        public void ManyMapsAndNoModeAskOncePerMap()
         {
             var f = new FilterState();
             foreach (var map in Catalog.Maps)
@@ -40,8 +40,34 @@ namespace Dispatch.Tests
             }
 
             var plan = QueryPlanner.Plan(f);
-            Assert.Equal(Catalog.DefaultModes.Count, plan.Count);
+            Assert.Equal(Catalog.Maps.Count, plan.Count);
+            Assert.All(plan, q => Assert.Contains("GameMode_s!=Training", q.Key));
+            Assert.Equal(Catalog.Maps.Count, plan.Select(q => q.Key).Distinct().Count());
+        }
+
+        [Fact]
+        public void PlanFallsBackToPerModeWhenPickedModesAndMapsAreTooMany()
+        {
+            var f = new FilterState();
+            f.Modes.Add("Zombie");
+            f.Modes.Add("Versus");
+            f.Modes.Add("Deathmatch");
+            foreach (var map in Catalog.Maps)
+            {
+                f.Maps.Add(map);
+            }
+
+            var plan = QueryPlanner.Plan(f);
+            Assert.Equal(3, plan.Count);
             Assert.DoesNotContain(plan, q => q.Key.Contains("Map_s"));
+        }
+
+        [Fact]
+        public void FewMapsAndNoModeStillAskPerModeAndMap()
+        {
+            var f = new FilterState();
+            f.Maps.Add("Asylum");
+            Assert.Equal(Catalog.DefaultModes.Count, QueryPlanner.Plan(f).Count);
         }
 
         [Fact]

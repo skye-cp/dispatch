@@ -256,10 +256,6 @@ namespace Dispatch
             {
                 return;
             }
-            catch (LocatorException e)
-            {
-                lastError = e.Message;
-            }
             catch (LookupException e)
             {
                 lastError = e.Message;
@@ -897,7 +893,7 @@ namespace Dispatch
                 hosts.Record(list, found, DateTime.UtcNow);
                 return true;
             }
-            catch (Exception e) when (e is LookupException || e is LocatorException || e is OperationCanceledException)
+            catch (Exception e) when (e is LookupException || e is OperationCanceledException)
             {
                 // Statuses stay unknown; the menus say so, and the next watch tries again.
                 return false;
@@ -2378,7 +2374,7 @@ namespace Dispatch
                 var now = await client.FetchAsync(LobbyQuery.HostId(owner), life.Token);
                 return (now.FirstOrDefault(x => x.Owner == owner), true);
             }
-            catch (Exception e) when (e is LookupException || e is LocatorException || e is OperationCanceledException)
+            catch (Exception e) when (e is LookupException || e is OperationCanceledException)
             {
                 return (null, false);
             }

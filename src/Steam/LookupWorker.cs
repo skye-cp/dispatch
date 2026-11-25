@@ -140,47 +140,37 @@ namespace Dispatch.Steam
         /// </summary>
         private static void SampleNewest(IntPtr matchmaking, IntPtr utils, TextWriter output)
         {
-            SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter(matchmaking, DistanceWorldwide);
-            SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter(matchmaking, Utf8(LobbyQuery.InGameKey), Utf8("1"), (int)Comparison.Equal);
-            var call = SteamAPI_ISteamMatchmaking_RequestLobbyList(matchmaking);
-            var clock = Stopwatch.StartNew();
-            bool failed;
-            while (!SteamAPI_ISteamUtils_IsAPICallCompleted(utils, call, out failed))
-            {
-                if (clock.Elapsed > RequestTimeout)
-                {
-                    return;
-                }
-
-                Thread.Sleep(15);
-            }
-
-            if (failed || !SteamAPI_ISteamUtils_GetAPICallResult(utils, call, out var count, sizeof(uint), LobbyMatchListCallback, out failed) || failed)
+            var count = RequestLobbies(matchmaking, utils, new[] { new LobbyFilter(LobbyQuery.InGameKey, "1") });
+            if (count == null)
             {
                 return;
             }
 
             uint newest = 0;
-            for (var i = 0; i < (int)count; i++)
+            for (var i = 0; i < (int)count.Value; i++)
             {
                 newest = LobbyAge.Newer(newest, LobbyAge.CounterOf(SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i)));
             }
 
-            if (count >= LobbyAge.MinServersForAnchor && newest > 0)
+            if (count.Value >= LobbyAge.MinServersForAnchor && newest > 0)
             {
                 output.WriteLine(Protocol.EncodeAnchor(newest));
             }
         }
 
-        private static void RunOne(int index, LobbyQuery query, IntPtr matchmaking, IntPtr utils, Pinger ping, TextWriter output)
+        /// <summary>
+        /// One public lobby-list request, worldwide, with these filters. Waits for Steam's answer and returns how many
+        /// lobbies it listed, or null if it failed or took too long. Steam cancels a pending request when a new one
+        /// starts, so requests run one at a time.
+        /// </summary>
+        private static uint? RequestLobbies(IntPtr matchmaking, IntPtr utils, IEnumerable<LobbyFilter> filters)
         {
             SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter(matchmaking, DistanceWorldwide);
-            foreach (var f in query.Filters)
+            foreach (var f in filters)
             {
                 SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter(matchmaking, Utf8(f.Key), Utf8(f.Value), (int)f.Comparison);
             }
 
-            // Steam cancels a pending request when a new one starts, so requests run one at a time.
             var call = SteamAPI_ISteamMatchmaking_RequestLobbyList(matchmaking);
             var clock = Stopwatch.StartNew();
             bool failed;
@@ -188,8 +178,7 @@ namespace Dispatch.Steam
             {
                 if (clock.Elapsed > RequestTimeout)
                 {
-                    output.WriteLine(Protocol.EncodeFailed(index));
-                    return;
+                    return null;
                 }
 
                 Thread.Sleep(15);
@@ -197,11 +186,22 @@ namespace Dispatch.Steam
 
             if (failed || !SteamAPI_ISteamUtils_GetAPICallResult(utils, call, out var count, sizeof(uint), LobbyMatchListCallback, out failed) || failed)
             {
+                return null;
+            }
+
+            return count;
+        }
+
+        private static void RunOne(int index, LobbyQuery query, IntPtr matchmaking, IntPtr utils, Pinger ping, TextWriter output)
+        {
+            var count = RequestLobbies(matchmaking, utils, query.Filters);
+            if (count == null)
+            {
                 output.WriteLine(Protocol.EncodeFailed(index));
                 return;
             }
 
-            for (var i = 0; i < (int)count; i++)
+            for (var i = 0; i < (int)count.Value; i++)
             {
                 var lobby = SteamAPI_ISteamMatchmaking_GetLobbyByIndex(matchmaking, i);
                 string Data(string key) => FromUtf8(SteamAPI_ISteamMatchmaking_GetLobbyData(matchmaking, lobby, Utf8(key)));
@@ -226,7 +226,7 @@ namespace Dispatch.Steam
                 }
             }
 
-            output.WriteLine(Protocol.EncodeDone(index, (int)count));
+            output.WriteLine(Protocol.EncodeDone(index, (int)count.Value));
         }
 
         /// <summary>Estimates pings from relay locations; degrades to "unknown" if Steam's networking is unavailable.</summary>
