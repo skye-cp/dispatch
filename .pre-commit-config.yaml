@@ -1,0 +1,96 @@
+# Quality and security gates. Install once per clone:  pre-commit install
+# (arms pre-commit, commit-msg and pre-push). Needs Python, the .NET 8 SDK and gitleaks on PATH.
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  # -- File hygiene --
+  # NuGet writes packages.lock.json itself, so the fixers leave it alone.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: 'packages\.lock\.json$'
+      - id: end-of-file-fixer
+        exclude: 'packages\.lock\.json$'
+      - id: mixed-line-ending
+        exclude: 'packages\.lock\.json$'
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-yaml
+      - id: check-xml
+        files: '\.(xml|xaml|csproj|props|targets)$'
+      - id: check-json
+      - id: detect-private-key
+      - id: detect-aws-credentials
+        args: [--allow-missing-credentials]
+
+  # -- Repo guards --
+  - repo: local
+    hooks:
+      - id: main-via-merge-only
+        name: Block direct commits to main (branch, then merge)
+        language: python
+        entry: python .config/hooks/main_guard.py
+        pass_filenames: false
+        always_run: true
+      - id: block-env-files
+        name: Block .env files (.env.example is fine)
+        language: fail
+        entry: .env files hold secrets and are never committed
+        files: '(^|/)\.env(\.[^/]*)?$'
+        exclude: '(^|/)\.env\.example$'
+      - id: check-pii
+        name: Block personal data
+        language: python
+        entry: python .config/hooks/check_pii.py
+        types: [text]
+
+  # -- Secrets --
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.config/secrets.baseline']
+        exclude: '(^\.config/secrets\.baseline|packages\.lock\.json)$'
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        args: [-c, .config/gitleaks.toml]
+  - repo: local
+    hooks:
+      - id: gitleaks-push
+        name: Scan pushed commits for secrets
+        language: python
+        entry: python .config/hooks/gitleaks_push.py
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+  # -- C# --
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format (verify)
+        language: system
+        entry: dotnet format Dispatch.sln --verify-no-changes
+        files: '\.(cs|csproj|sln|editorconfig)$'
+        pass_filenames: false
+      - id: dotnet-test
+        name: Unit tests
+        language: system
+        entry: dotnet test Dispatch.sln -c Release --nologo
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+  # -- Commit messages --
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, docs, refactor, test, chore, ci, build, perf, style, revert]

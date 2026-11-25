@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# Editors
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Local-only denylist for the PII hook
+.config/pii_wordlist.local.txt
