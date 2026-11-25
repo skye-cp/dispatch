@@ -61,12 +61,7 @@ namespace Dispatch
         private readonly FollowList follows = new FollowList();
         private readonly RecentList recent = new RecentList();
         private readonly DispatcherTimer watchTimer;
-        /// <summary>A followed host must be gone this long before coming back alerts again, so a map change or a quick re-host stays quiet.</summary>
-        private static readonly TimeSpan GoneAfter = TimeSpan.FromMinutes(3);
-        private readonly Dictionary<string, DateTime> followedSeen = new Dictionary<string, DateTime>();
-
-        /// <summary>Followed hosts a check found not hosting: only a host seen to be away can "appear" and alert.</summary>
-        private readonly HashSet<string> followedAway = new HashSet<string>();
+        private readonly HostWatch hosts = new HostWatch();
         private DateTime? baselineUtc;
         private bool autoRefresh;
         private bool watching;
@@ -709,12 +704,6 @@ namespace Dispatch
         /// <summary>The countdown ring's dash length, in stroke widths: the circumference of a 22 px ring with a 1.5 px stroke.</summary>
         private const double RingLength = 42.9;
 
-        /// <summary>A host check is trusted this long: a bit over two watch intervals, so a watched host is never "unknown".</summary>
-        private static readonly TimeSpan HostCheckFor = TimeSpan.FromMinutes(2);
-
-        /// <summary>Host checks per lookup run: each is one Steam request, about a third of a second.</summary>
-        private const int MaxHostChecks = 10;
-
         /// <summary>The next automatic refresh is a minute after the last refresh of any kind; the ring shows how close it is.</summary>
         private void RestartCountdown()
         {
@@ -874,22 +863,15 @@ namespace Dispatch
             panel.Children.Add(line);
             return panel;
         }
-        /// <summary>The host's current server if known: from a recent check, the list, or the follow watch.</summary>
-        private Server HostingNow(string owner)
-        {
-            if (hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor)
-            {
-                return hostFound.TryGetValue(owner, out var checkedServer) ? checkedServer : null;
-            }
+        private Server HostingNow(string owner) => hosts.HostingNow(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
-            return browser.Current(DateTime.UtcNow).FirstOrDefault(s => s.Owner == owner);
-        }
+        private bool KnownNotHosting(string owner) => hosts.KnownNotHosting(owner, DateTime.UtcNow);
 
-        private bool KnownNotHosting(string owner) =>
-            hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor && !hostFound.ContainsKey(owner);
+        private bool NeedsCheck(string owner) => hosts.NeedsCheck(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
-        private bool NeedsCheck(string owner) =>
-            HostingNow(owner) == null && !KnownNotHosting(owner);
+        private List<Server> OnlineNow(DateTime now) => hosts.Online(browser.Current(now), now);
+
+        private string HostDetail(string owner, string fallback) => hosts.Detail(owner, browser.Current(DateTime.UtcNow), fallback, DateTime.UtcNow);
 
         /// <summary>
         /// Asks Steam which of these hosts are hosting now: one quick query each, at most ten per run, least
@@ -897,9 +879,7 @@ namespace Dispatch
         /// </summary>
         private async Task<bool> CheckHostsAsync(IEnumerable<string> owners)
         {
-            var list = owners.Distinct()
-                .OrderBy(o => hostChecked.TryGetValue(o, out var at) ? at : DateTime.MinValue)
-                .Take(MaxHostChecks).ToList();
+            var list = hosts.NextToCheck(owners);
             if (list.Count == 0 || demo || Busy || watching)
             {
                 return false;
@@ -919,20 +899,7 @@ namespace Dispatch
                         }
                     }
                 }, null, life.Token);
-                foreach (var owner in list)
-                {
-                    hostChecked[owner] = DateTime.UtcNow;
-                    if (found.TryGetValue(owner, out var s))
-                    {
-                        hostFound[owner] = s;
-                    }
-                    else
-                    {
-                        hostFound.Remove(owner);
-                        followedAway.Add(owner);
-                    }
-                }
-
+                hosts.Record(list, found, DateTime.UtcNow);
                 return true;
             }
             catch (Exception e) when (e is LookupException || e is LocatorException || e is OperationCanceledException)
@@ -944,20 +911,6 @@ namespace Dispatch
             {
                 watching = false;
             }
-        }
-
-        /// <summary>Servers known to be up right now: recent list answers plus recent host checks.</summary>
-        private List<Server> OnlineNow(DateTime now) =>
-            browser.Current(now)
-                .Concat(hostFound.Where(p => hostChecked.TryGetValue(p.Key, out var at) && now - at < HostCheckFor).Select(p => p.Value))
-                .ToList();
-
-        private string HostDetail(string owner, string fallback)
-        {
-            var now = HostingNow(owner);
-            return now != null ? "Hosting now  ·  " + now.Mode + " · " + now.MapName
-                : KnownNotHosting(owner) ? "Not hosting now"
-                : fallback;
         }
 
         private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
@@ -1162,8 +1115,7 @@ namespace Dispatch
         private bool copyOnJoin = true;
         private string pastedLink;
         private DateTime nextAutoUtc;
-        private readonly Dictionary<string, Server> hostFound = new Dictionary<string, Server>();
-        private readonly Dictionary<string, DateTime> hostChecked = new Dictionary<string, DateTime>();
+
         private bool errorSounded;
         private bool refreshing;
 
@@ -2129,7 +2081,7 @@ namespace Dispatch
                 s.IsNewRound = demo ? DemoData.IsNewRound(s.Id) : now - browser.RoundStartUtc(s.Id) < NewRoundFor;
             }
 
-            follows.Refresh(all.Concat(hostFound.Values));
+            follows.Refresh(all.Concat(hosts.Found));
             var online = OnlineNow(now);
             if (!Busy && !watching)
             {
@@ -2153,16 +2105,7 @@ namespace Dispatch
 
             // A host alerts only after being seen away: gone for a while since last seen, or found not hosting by
             // a check. A host simply noticed for the first time (online at start, or outside the filters) doesn't.
-            var online = servers.Where(s => follows.Contains(s.Owner)).GroupBy(s => s.Owner).Select(g => g.First()).ToList();
-            var appeared = online.Where(s => followedSeen.TryGetValue(s.Owner, out var last)
-                ? now - last > GoneAfter
-                : followedAway.Contains(s.Owner)).ToList();
-            foreach (var s in online)
-            {
-                followedSeen[s.Owner] = now;
-                followedAway.Remove(s.Owner);
-            }
-
+            var appeared = hosts.Appeared(servers, follows.Contains, now);
             if (appeared.Count > 0)
             {
                 Alert(appeared);
@@ -2213,7 +2156,7 @@ namespace Dispatch
             if (on)
             {
                 // Already online when followed: no alert for it now.
-                followedSeen[s.Owner] = DateTime.UtcNow;
+                hosts.MarkSeen(s.Owner, DateTime.UtcNow);
             }
 
             Render();
@@ -2353,18 +2296,18 @@ namespace Dispatch
                 return;
             }
 
-            if (!asked && settings.Get("updateCheck", "1") == "0")
+            if (!asked && settings.Get(Preferences.Keys.UpdateCheck, "1") == "0")
             {
                 return;
             }
 
             var current = Assembly.GetExecutingAssembly().GetName().Version;
-            if (UpdateCheck.TryVersion(settings.Get("updateTag"), out var cached))
+            if (UpdateCheck.TryVersion(settings.Get(Preferences.Keys.UpdateTag), out var cached))
             {
-                ShowUpdate(new ReleaseInfo(cached, settings.Get("updateTag"), settings.Get("updateUrl")), current);
+                ShowUpdate(new ReleaseInfo(cached, settings.Get(Preferences.Keys.UpdateTag), settings.Get(Preferences.Keys.UpdateUrl)), current);
             }
 
-            long.TryParse(settings.Get("updateCheckedAt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
+            long.TryParse(settings.Get(Preferences.Keys.UpdateCheckedAt), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
             if (!asked && DateTime.UtcNow - new DateTime(Math.Max(0, ticks), DateTimeKind.Utc) < UpdateCheck.Interval)
             {
                 return;
@@ -2382,11 +2325,11 @@ namespace Dispatch
                     : UpdateCheck.IsNewer(latest, current) ? "Update available: " + latest.Tag + ". Click it in the title bar."
                     : "You're on the latest version.");
             }
-            settings.Set("updateCheckedAt", DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+            settings.Set(Preferences.Keys.UpdateCheckedAt, DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
             if (latest != null)
             {
-                settings.Set("updateTag", latest.Tag);
-                settings.Set("updateUrl", latest.Url);
+                settings.Set(Preferences.Keys.UpdateTag, latest.Tag);
+                settings.Set(Preferences.Keys.UpdateUrl, latest.Url);
                 ShowUpdate(latest, current);
             }
 
@@ -2762,75 +2705,39 @@ namespace Dispatch
 
         private void RestoreSettings()
         {
-            var f = browser.Filters;
-            foreach (var m in settings.GetList("modes"))
-            {
-                f.Modes.Add(m);
-            }
-
-            foreach (var m in settings.GetList("maps"))
-            {
-                f.Maps.Add(m);
-            }
-
-            foreach (var b in settings.GetList("bots"))
-            {
-                f.Bots.Add(b);
-            }
-
-            foreach (var r in settings.GetList("regions"))
-            {
-                f.Regions.Add(r);
-            }
-
-            f.MaxPing = PingLimits.Contains((int)settings.GetDouble("maxPing", 0)) ? (int)settings.GetDouble("maxPing", 0) : 0;
-            f.AgeLimit = FilterState.AgeLimits.Contains((int)settings.GetDouble("ageLimit", 0)) ? (int)settings.GetDouble("ageLimit", 0) : 0;
-            lobbyAge.Load(settings.GetRecords("ageAnchors"), DateTime.UtcNow);
-
-            if (Enum.TryParse(settings.Get("sort"), out SortKey key) && Enum.IsDefined(typeof(SortKey), key))
-            {
-                sortKey = key;
-                sortDescending = settings.Get("descending") == "1";
-            }
-
-            client.Location = settings.Get("pingLocation");
-            if (long.TryParse(settings.Get("pingLocationTime"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks) && ticks > 0)
-            {
-                client.LocationUtc = new DateTime(ticks, DateTimeKind.Utc);
-            }
-
-            follows.Load(settings.GetRecords("followed"));
+            var p = Preferences.Read(settings, browser.Filters, follows, recent, lobbyAge, DateTime.UtcNow);
             if (demo)
             {
                 follows.Toggle(DemoData.FollowedOwner, DemoData.FollowedName);
             }
-            recent.Load(settings.GetRecords("recent"));
-            autoRefresh = settings.Get("autoRefresh") == "1";
-            sounds.Enabled = settings.Get("sounds", "1") == "1";
-            copyOnJoin = settings.Get("copyOnJoin", "1") == "1";
+
+            sortKey = p.Sort;
+            sortDescending = p.Descending;
+            client.Location = p.PingLocation;
+            client.LocationUtc = p.PingLocationUtc;
+            autoRefresh = p.AutoRefresh;
+            sounds.Enabled = p.Sounds;
+            copyOnJoin = p.CopyOnJoin;
             quiet = true;
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
             ShowAutoState();
 
-
-            var width = settings.GetDouble("width", Width);
-            var height = settings.GetDouble("height", Height);
-            var left = settings.GetDouble("left", double.NaN);
-            var top = settings.GetDouble("top", double.NaN);
-            Width = Math.Max(MinWidth, Math.Min(width, SystemParameters.VirtualScreenWidth));
-            Height = Math.Max(MinHeight, Math.Min(height, SystemParameters.VirtualScreenHeight));
-            if (!double.IsNaN(left) && !double.IsNaN(top) &&
-                left >= SystemParameters.VirtualScreenLeft - 40 && top >= SystemParameters.VirtualScreenTop - 10 &&
-                left + 120 <= SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth &&
-                top + 60 <= SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight)
+            if (!double.IsNaN(p.Width) && !double.IsNaN(p.Height))
             {
-                WindowStartupLocation = WindowStartupLocation.Manual;
-                Left = left;
-                Top = top;
+                Width = Math.Max(MinWidth, Math.Min(p.Width, SystemParameters.VirtualScreenWidth));
+                Height = Math.Max(MinHeight, Math.Min(p.Height, SystemParameters.VirtualScreenHeight));
             }
 
-            if (settings.Get("maximized") == "1")
+            if (Preferences.IsOnScreen(p.Left, p.Top, SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = p.Left;
+                Top = p.Top;
+            }
+
+            if (p.Maximized)
             {
                 WindowState = WindowState.Maximized;
             }
@@ -2838,33 +2745,22 @@ namespace Dispatch
 
         private void SaveSettings()
         {
-            var f = browser.Filters;
-            settings.SetList("modes", f.Modes);
-            settings.SetList("maps", f.Maps);
-            settings.SetList("bots", f.Bots);
-            settings.SetList("regions", f.Regions);
-            settings.SetDouble("maxPing", f.MaxPing);
-            settings.SetDouble("ageLimit", f.AgeLimit);
-            settings.SetRecords("ageAnchors", lobbyAge.ToRecords());
-            settings.Set("sort", sortKey.ToString());
-            settings.Set("descending", sortDescending ? "1" : "0");
-            settings.SetRecords("followed", follows.ToRecords());
-            settings.SetRecords("recent", recent.ToRecords());
-            settings.Set("autoRefresh", autoRefresh ? "1" : "0");
-            settings.Set("sounds", sounds.Enabled ? "1" : "0");
-            settings.Set("copyOnJoin", copyOnJoin ? "1" : "0");
-            if (!string.IsNullOrEmpty(client.Location))
-            {
-                settings.Set("pingLocation", client.Location);
-                settings.Set("pingLocationTime", client.LocationUtc.Ticks.ToString(CultureInfo.InvariantCulture));
-            }
-
             var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
-            settings.SetDouble("left", bounds.Left);
-            settings.SetDouble("top", bounds.Top);
-            settings.SetDouble("width", bounds.Width);
-            settings.SetDouble("height", bounds.Height);
-            settings.Set("maximized", wasMaximized ? "1" : "0");
+            new Preferences
+            {
+                Sort = sortKey,
+                Descending = sortDescending,
+                AutoRefresh = autoRefresh,
+                Sounds = sounds.Enabled,
+                CopyOnJoin = copyOnJoin,
+                PingLocation = client.Location,
+                PingLocationUtc = client.LocationUtc,
+                Left = bounds.Left,
+                Top = bounds.Top,
+                Width = bounds.Width,
+                Height = bounds.Height,
+                Maximized = wasMaximized,
+            }.Write(settings, browser.Filters, follows, recent, lobbyAge);
             settings.Save();
         }
     }
