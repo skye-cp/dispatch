@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Media;
 using System.Text;
@@ -10,19 +11,15 @@ namespace Dispatch
         /// <summary>A followed host's server appeared: a short radio "dispatch" chirp.</summary>
         Alert,
 
-        /// <summary>A join link was opened.</summary>
         Join,
 
-        /// <summary>An invite link was copied.</summary>
         Copy,
 
-        /// <summary>Pull to refresh was triggered.</summary>
         Pull,
 
         /// <summary>Something didn't work: a soft, low "denied" tone.</summary>
         Error,
 
-        /// <summary>A host was followed.</summary>
         Follow,
     }
 
@@ -33,62 +30,34 @@ namespace Dispatch
     internal sealed class Sounds
     {
         private const int Rate = 22050;
-        private readonly SoundPlayer alert;
-        private readonly SoundPlayer join;
-        private readonly SoundPlayer copy;
-        private readonly SoundPlayer pull;
-        private readonly SoundPlayer error;
-        private readonly SoundPlayer follow;
-
-        public Sounds()
+        private readonly Dictionary<Cue, SoundPlayer> players = new Dictionary<Cue, SoundPlayer>
         {
-            alert = Make(Chirp());
-            join = Make(Concat(Tone(740, 0.06, 0.28), Silence(0.015), Tone(1110, 0.09, 0.28)));
-            copy = Make(Tick(1900, 0.03, 0.22));
-            pull = Make(Concat(Tick(1300, 0.018, 0.18), Tick(950, 0.022, 0.16)));
-            error = Make(Concat(Tone(520, 0.07, 0.2, harmonic: 0.25), Silence(0.02), Tone(390, 0.12, 0.2, harmonic: 0.25)));
-            follow = Make(Concat(Tick(1250, 0.02, 0.17), Silence(0.01), Tick(1700, 0.03, 0.17)));
-        }
+            [Cue.Alert] = Make(Chirp()),
+            [Cue.Join] = Make(Concat(Tone(740, 0.06, 0.28), Silence(0.015), Tone(1110, 0.09, 0.28))),
+            [Cue.Copy] = Make(Tick(1900, 0.03, 0.22)),
+            [Cue.Pull] = Make(Concat(Tick(1300, 0.018, 0.18), Tick(950, 0.022, 0.16))),
+            [Cue.Error] = Make(Concat(Tone(520, 0.07, 0.2, harmonic: 0.25), Silence(0.02), Tone(390, 0.12, 0.2, harmonic: 0.25))),
+            [Cue.Follow] = Make(Concat(Tick(1250, 0.02, 0.17), Silence(0.01), Tick(1700, 0.03, 0.17))),
+        };
 
         public bool Enabled { get; set; } = true;
 
         public void Play(Cue cue)
         {
-            if (!Enabled)
+            if (!Enabled || !players.TryGetValue(cue, out var player))
             {
                 return;
             }
 
             try
             {
-                switch (cue)
-                {
-                    case Cue.Alert:
-                        alert.Play();
-                        break;
-                    case Cue.Join:
-                        join.Play();
-                        break;
-                    case Cue.Copy:
-                        copy.Play();
-                        break;
-                    case Cue.Pull:
-                        pull.Play();
-                        break;
-                    case Cue.Error:
-                        error.Play();
-                        break;
-                    case Cue.Follow:
-                        follow.Play();
-                        break;
-                }
+                player.Play();
             }
             catch (InvalidOperationException)
             {
                 // No audio device: stay silent.
             }
         }
-
         /// <summary>Squelch, two radio beeps, squelch tail.</summary>
         private static float[] Chirp() => Concat(
             Noise(0.035, 0.22),

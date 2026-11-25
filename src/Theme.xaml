@@ -453,6 +453,18 @@
         </Setter>
     </Style>
 
+    <!-- A toolbar menu's frame. Its popup sits outside the window's tree, so it sets the window's text style itself. -->
+    <Style x:Key="ToolbarMenu" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="0,4" />
+        <Setter Property="MinWidth" Value="220" />
+        <Setter Property="TextElement.FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="TextElement.FontSize" Value="14" />
+        <Setter Property="TextElement.Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
     <!-- A line in a toolbar menu (Recent, Followed hosts, the main menu): looks like a menu item, red on hover. -->
     <Style x:Key="MenuRow" TargetType="Button">
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />

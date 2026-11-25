@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -139,7 +140,7 @@ namespace Dispatch.Steam
             try
             {
                 return Directory.Exists(folder)
-                    ? Directory.EnumerateFiles(folder, LibraryName, SearchOption.AllDirectories).FirstOrDefault()
+                    ? PickLibrary(Directory.EnumerateFiles(folder, LibraryName, SearchOption.AllDirectories))
                     : null;
             }
             catch (UnauthorizedAccessException)
@@ -151,9 +152,26 @@ namespace Dispatch.Steam
                 return null;
             }
         }
+
+        /// <summary>
+        /// Of several copies, the newest Steamworks build: an older one bundled elsewhere in the game folder may lack
+        /// the API Dispatch calls. (Bodycam ships one copy, inside its Steam plugin's ThirdParty folder.)
+        /// </summary>
+        private static string PickLibrary(IEnumerable<string> paths) =>
+            PickNewest(paths.Select(p => (p, FileVersionInfo.GetVersionInfo(p).FileVersion)));
+
+        /// <summary>The path with the highest version; unreadable versions rank last, and ties keep the first found.</summary>
+        public static string PickNewest(IEnumerable<(string Path, string Version)> copies) =>
+            copies
+                .Select((c, i) => (c.Path, Index: i, Version: Version.TryParse(c.Version ?? "", out var v) ? v : new Version(0, 0)))
+                .OrderByDescending(c => c.Version)
+                .ThenBy(c => c.Index)
+                .Select(c => c.Path)
+                .FirstOrDefault();
     }
 
-    internal sealed class LocatorException : Exception
+    /// <summary>Bodycam or its Steam library could not be found: a lookup failure with a clearer message.</summary>
+    internal sealed class LocatorException : LookupException
     {
         public LocatorException(string message)
             : base(message)

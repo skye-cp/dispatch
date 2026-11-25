@@ -135,7 +135,7 @@ Each lookup briefly runs as Bodycam's Steam app (about a second) to read the gam
 
 ## How it works
 
-- **Server list.** Bodycam servers are Steam lobbies. Dispatch asks Steam for the public lobby list once per game mode, and per map when maps are picked, because Steam returns at most 50 lobbies per request.
+- **Server list.** Bodycam servers are Steam lobbies, and Steam returns at most 50 per request, so Dispatch asks several times: once per game mode, once per mode and map when a few maps are picked, or once per map when many are.
 - **Ping.** Every lobby publishes its host's position on Steam's relay network, and Steam estimates the round trip from yours.
 - **Isolation.** Each lookup runs in a short-lived copy of Dispatch started in lookup mode. It loads Steam's library from your own Bodycam install (a private copy, so the game's file is only read), lists lobbies and exits. The window itself never talks to Steam.
 - **Joining.** Join and invite links are Steam's own `steam://joinlobby/...` links. Steam hands the link to the game, and the game joins.

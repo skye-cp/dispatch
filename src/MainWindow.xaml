@@ -13,6 +13,60 @@
         <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 
+    <Window.Resources>
+        <!-- Column widths, shared by the header and every row so they can't drift apart. Name takes the rest. -->
+        <GridLength x:Key="ColSlots">70</GridLength>
+        <GridLength x:Key="ColMode">134</GridLength>
+        <GridLength x:Key="ColMap">150</GridLength>
+        <GridLength x:Key="ColBots">54</GridLength>
+        <GridLength x:Key="ColRegion">124</GridLength>
+        <GridLength x:Key="ColAge">72</GridLength>
+        <GridLength x:Key="ColPing">76</GridLength>
+
+        <!-- Filter bar: each category is a button showing its selection, opening a dropdown of chips. -->
+        <Style x:Key="FilterValue" TargetType="TextBlock">
+            <Setter Property="Text" Value="Any" />
+            <Setter Property="MaxWidth" Value="170" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="FilterChevron" TargetType="TextBlock">
+            <Setter Property="Text" Value="&#xE70D;" />
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="Margin" Value="8,2,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Opacity" Value="0.6" />
+        </Style>
+        <Style x:Key="FilterPopup" TargetType="Popup">
+            <Setter Property="Placement" Value="Bottom" />
+            <Setter Property="VerticalOffset" Value="6" />
+            <Setter Property="StaysOpen" Value="False" />
+            <Setter Property="AllowsTransparency" Value="True" />
+            <Setter Property="PopupAnimation" Value="None" />
+        </Style>
+        <Style x:Key="FilterChips" TargetType="WrapPanel">
+            <Setter Property="MaxWidth" Value="470" />
+        </Style>
+        <Style x:Key="FilterClear" TargetType="Button" BasedOn="{StaticResource Link}">
+            <Setter Property="Content" Value="CLEAR" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="ToolTip" Value="Clear this filter" />
+            <EventSetter Event="Click" Handler="OnClearCategory" />
+        </Style>
+
+        <!-- A list value tagged with a filter kind: clicking it toggles that filter; its tooltip says what a click does. -->
+        <Style x:Key="Cell" TargetType="TextBlock" BasedOn="{StaticResource CellLink}">
+            <Setter Property="Margin" Value="12,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="ToolTip" Value="" />
+            <EventSetter Event="MouseLeftButtonUp" Handler="OnCellClick" />
+            <EventSetter Event="ToolTipOpening" Handler="OnCellTip" />
+        </Style>
+    </Window.Resources>
     <Border x:Name="Frame" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
@@ -138,17 +192,15 @@
                         <Button x:Name="ModeButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Mode filter" Click="OnFilterButton" ToolTip="Game modes to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="MODE" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="ModeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="ModeValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="ModePopup" PlacementTarget="{Binding ElementName=ModeButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="ModePopup" PlacementTarget="{Binding ElementName=ModeButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="ModeChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="mode" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="ModeChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="mode" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -157,17 +209,15 @@
                         <Button x:Name="MapButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Map filter" Click="OnFilterButton" ToolTip="Maps to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="MAP" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="MapValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="MapValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="MapPopup" PlacementTarget="{Binding ElementName=MapButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="MapPopup" PlacementTarget="{Binding ElementName=MapButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="MapChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="map" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="MapChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="map" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -176,17 +226,15 @@
                         <Button x:Name="RegionButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Region filter" Click="OnFilterButton" ToolTip="Steam relay regions to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="REGION" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="RegionValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="RegionValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="RegionPopup" PlacementTarget="{Binding ElementName=RegionButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="RegionPopup" PlacementTarget="{Binding ElementName=RegionButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="RegionChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="region" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="RegionChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="region" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -195,17 +243,15 @@
                         <Button x:Name="AgeButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Age filter" Click="OnFilterButton" ToolTip="How long servers have been up">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="AGE" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="AgeValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="AgeValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="AgePopup" PlacementTarget="{Binding ElementName=AgeButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="AgePopup" PlacementTarget="{Binding ElementName=AgeButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="AgeChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="age" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="AgeChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="age" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -214,17 +260,15 @@
                         <Button x:Name="PingButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Ping filter" Click="OnFilterButton" ToolTip="Highest ping to show">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="PING" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="PingValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="PingValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="PingPopup" PlacementTarget="{Binding ElementName=PingButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="PingPopup" PlacementTarget="{Binding ElementName=PingButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="PingChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="ping" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="PingChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="ping" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -233,17 +277,15 @@
                         <Button x:Name="BotButton" Style="{StaticResource FilterButton}" AutomationProperties.Name="Bot filter" Click="OnFilterButton" ToolTip="Servers with or without bots">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="BOT" Style="{StaticResource FilterLabel}" />
-                                <TextBlock x:Name="BotValue" Text="Any" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="9" Margin="8,2,0,0" VerticalAlignment="Center" Opacity="0.6" />
+                                <TextBlock x:Name="BotValue" Style="{StaticResource FilterValue}" />
+                                <TextBlock Style="{StaticResource FilterChevron}" />
                             </StackPanel>
                         </Button>
-                        <Popup x:Name="BotPopup" PlacementTarget="{Binding ElementName=BotButton}" Placement="Bottom" VerticalOffset="6"
-                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="OnFilterPopupClosed">
+                        <Popup x:Name="BotPopup" PlacementTarget="{Binding ElementName=BotButton}" Style="{StaticResource FilterPopup}" Closed="OnFilterPopupClosed">
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
-                                    <WrapPanel x:Name="BotChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="bots" HorizontalAlignment="Right"
-                                            Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
+                                    <WrapPanel x:Name="BotChips" Style="{StaticResource FilterChips}" />
+                                    <Button Style="{StaticResource FilterClear}" Tag="bots" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -264,13 +306,13 @@
                     <Grid Margin="1,0,1,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
-                            <ColumnDefinition Width="70" />
-                            <ColumnDefinition Width="134" />
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="54" />
-                            <ColumnDefinition Width="124" />
-                            <ColumnDefinition Width="72" />
-                            <ColumnDefinition Width="76" />
+                            <ColumnDefinition Width="{StaticResource ColSlots}" />
+                            <ColumnDefinition Width="{StaticResource ColMode}" />
+                            <ColumnDefinition Width="{StaticResource ColMap}" />
+                            <ColumnDefinition Width="{StaticResource ColBots}" />
+                            <ColumnDefinition Width="{StaticResource ColRegion}" />
+                            <ColumnDefinition Width="{StaticResource ColAge}" />
+                            <ColumnDefinition Width="{StaticResource ColPing}" />
                         </Grid.ColumnDefinitions>
                         <Button x:Name="HeadName" Style="{StaticResource HeaderCell}" Tag="Name" Click="OnSort" />
                         <Button x:Name="HeadSlots" Grid.Column="1" Style="{StaticResource HeaderCell}" Tag="Slots" Click="OnSort"
@@ -315,13 +357,13 @@
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="200" />
-                                    <ColumnDefinition Width="70" />
-                                    <ColumnDefinition Width="134" />
-                                    <ColumnDefinition Width="150" />
-                                    <ColumnDefinition Width="54" />
-                                    <ColumnDefinition Width="124" />
-                                    <ColumnDefinition Width="72" />
-                                    <ColumnDefinition Width="76" />
+                                    <ColumnDefinition Width="{StaticResource ColSlots}" />
+                                    <ColumnDefinition Width="{StaticResource ColMode}" />
+                                    <ColumnDefinition Width="{StaticResource ColMap}" />
+                                    <ColumnDefinition Width="{StaticResource ColBots}" />
+                                    <ColumnDefinition Width="{StaticResource ColRegion}" />
+                                    <ColumnDefinition Width="{StaticResource ColAge}" />
+                                    <ColumnDefinition Width="{StaticResource ColPing}" />
                                 </Grid.ColumnDefinitions>
                                 <Rectangle x:Name="AlertRing" Grid.ColumnSpan="8" Margin="-1" RadiusX="2" RadiusY="2" Stroke="{StaticResource RedHotBrush}"
                                            StrokeThickness="2" Opacity="0" IsHitTestVisible="False" />
@@ -362,28 +404,17 @@
                                 <TextBlock Grid.Column="1" Text="{Binding SlotsText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextDimBrush}" FontSize="15" />
                                 <!-- Values tagged with a filter kind toggle that filter when clicked. -->
-                                <TextBlock Grid.Column="2" Text="{Binding Mode, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center" FontSize="15"
-                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="mode"
-                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
-                                <TextBlock Grid.Column="3" Text="{Binding MapName, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center" FontSize="15"
-                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="map"
-                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
-                                <TextBlock Grid.Column="4" Text="{Binding BotsText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center" FontSize="15"
-                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="bots"
-                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
-                                <TextBlock Grid.Column="5" Text="{Binding RegionName}" Margin="12,0" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis"
-                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="region"
-                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
-                                <TextBlock Grid.Column="6" Text="{Binding AgeText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Margin="12,0" VerticalAlignment="Center" FontSize="15"
-                                           Foreground="{StaticResource TextDimBrush}"
-                                           HorizontalAlignment="Left" Style="{StaticResource CellLink}" Tag="age"
-                                           MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
+                                <TextBlock Grid.Column="2" Text="{Binding Mode, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="mode" />
+                                <TextBlock Grid.Column="3" Text="{Binding MapName, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="map" />
+                                <TextBlock Grid.Column="4" Text="{Binding BotsText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="bots" />
+                                <TextBlock Grid.Column="5" Text="{Binding RegionName}" Style="{StaticResource Cell}" Tag="region"
+                                           Foreground="{StaticResource TextDimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="6" Text="{Binding AgeText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Style="{StaticResource Cell}" Tag="age"
+                                           Foreground="{StaticResource TextDimBrush}" />
                                 <StackPanel Grid.Column="7" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center">
                                     <Rectangle x:Name="PingBar" Width="3" Height="12" Margin="0,1,8,0" Fill="{StaticResource LineStrongBrush}" />
-                                    <TextBlock x:Name="PingText" Text="{Binding PingText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" FontSize="15" Foreground="{StaticResource TextFaintBrush}"
-                                               Style="{StaticResource CellLink}" Tag="ping"
-                                               MouseLeftButtonUp="OnCellClick" ToolTip="" ToolTipOpening="OnCellTip" />
+                                    <TextBlock x:Name="PingText" Text="{Binding PingText, NotifyOnTargetUpdated=True}" local:Motion.AnimateChanges="True" Foreground="{StaticResource TextFaintBrush}"
+                                               Style="{StaticResource Cell}" Tag="ping" Margin="0" />
                                 </StackPanel>
                             </Grid>
                             <DataTemplate.Triggers>

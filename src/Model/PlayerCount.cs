@@ -1,7 +1,5 @@
 using System;
 using System.Globalization;
-using System.IO;
-using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -20,30 +18,7 @@ namespace Dispatch.Model
         private static readonly Regex Ok = new Regex("\"result\"\\s*:\\s*1\\b", RegexOptions.CultureInvariant);
 
         /// <summary>The current total, or null if Steam didn't answer.</summary>
-        public static Task<int?> FetchAsync() => Task.Run(() =>
-        {
-            try
-            {
-                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-                var request = (HttpWebRequest)WebRequest.Create(Endpoint);
-                request.UserAgent = "Dispatch";
-                request.Timeout = 6000;
-                request.ReadWriteTimeout = 6000;
-                using (var response = (HttpWebResponse)request.GetResponse())
-                using (var reader = new StreamReader(response.GetResponseStream()))
-                {
-                    return Parse(reader.ReadToEnd());
-                }
-            }
-            catch (WebException)
-            {
-                return null;
-            }
-            catch (IOException)
-            {
-                return null;
-            }
-        });
+        public static async Task<int?> FetchAsync() => Parse(await Web.GetTextAsync(Endpoint, "Dispatch").ConfigureAwait(false));
 
         public static int? Parse(string json)
         {

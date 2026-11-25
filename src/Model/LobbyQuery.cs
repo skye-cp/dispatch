@@ -68,6 +68,27 @@ namespace Dispatch.Model
             return new LobbyQuery(filters);
         }
 
+        /// <summary>
+        /// Every mode except Training on one map. Used when maps are picked but modes aren't: one request per map
+        /// reaches far more of that map's servers than per-mode requests filtered on screen (50 against 14 for one
+        /// map in a live test, November 2026), and Steam honours the "not Training" filter.
+        /// </summary>
+        public static LobbyQuery OnMap(string map, string bots = null)
+        {
+            var filters = new List<LobbyFilter>
+            {
+                new LobbyFilter(InGameKey, "1"),
+                new LobbyFilter(ModeKey, Catalog.Training, Comparison.NotEqual),
+                new LobbyFilter(MapKey, map),
+            };
+            if (bots != null)
+            {
+                filters.Add(new LobbyFilter(BotsKey, bots));
+            }
+
+            return new LobbyQuery(filters);
+        }
+
         public static LobbyQuery HostName(string name) =>
             new LobbyQuery(new[] { new LobbyFilter(InGameKey, "1"), new LobbyFilter(NameKey, name) });
 

@@ -108,6 +108,15 @@ namespace Dispatch.Tests
         }
 
         [Fact]
+        public void TheNewestSteamLibraryCopyIsUsed()
+        {
+            Assert.Equal(@"b\steam_api64.dll", GameLocator.PickNewest(new[] { (@"a\steam_api64.dll", "07.1.0.0"), (@"b\steam_api64.dll", "09.31.86.04") }));
+            Assert.Equal(@"a\steam_api64.dll", GameLocator.PickNewest(new[] { (@"a\steam_api64.dll", "09.31.86.04"), (@"b\steam_api64.dll", (string)null) }));
+            Assert.Equal(@"only\steam_api64.dll", GameLocator.PickNewest(new[] { (@"only\steam_api64.dll", "garbage") }));
+            Assert.Null(GameLocator.PickNewest(new (string, string)[0]));
+        }
+
+        [Fact]
         public void PlannerMatchesNamesWhateverTheirCase()
         {
             var f = new FilterState();

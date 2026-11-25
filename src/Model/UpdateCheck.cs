@@ -1,6 +1,4 @@
 using System;
-using System.IO;
-using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -39,31 +37,8 @@ namespace Dispatch.Model
 
         public static bool IsReleasePage(string url) => url != null && ReleasePage.IsMatch(url);
 
-        public static Task<ReleaseInfo> LatestAsync() => Task.Run(() =>
-        {
-            try
-            {
-                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-                var request = (HttpWebRequest)WebRequest.Create("https://api.github.com/repos/" + Repository + "/releases/latest");
-                request.UserAgent = "Dispatch-update-check";
-                request.Accept = "application/vnd.github+json";
-                request.Timeout = 6000;
-                request.ReadWriteTimeout = 6000;
-                using (var response = (HttpWebResponse)request.GetResponse())
-                using (var reader = new StreamReader(response.GetResponseStream()))
-                {
-                    return Parse(reader.ReadToEnd());
-                }
-            }
-            catch (WebException)
-            {
-                return null;
-            }
-            catch (IOException)
-            {
-                return null;
-            }
-        });
+        public static async Task<ReleaseInfo> LatestAsync() =>
+            Parse(await Web.GetTextAsync("https://api.github.com/repos/" + Repository + "/releases/latest", "Dispatch-update-check", "application/vnd.github+json").ConfigureAwait(false));
 
         public static ReleaseInfo Parse(string json)
         {

@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -28,11 +28,6 @@ namespace Dispatch
         private const int ClipboardUpdateMessage = 0x031D;
         private static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan MessageFor = TimeSpan.FromSeconds(6);
-        private static readonly int[] PingLimits = FilterState.PingLimits;
-        private static readonly string[] FilterKinds = { "mode", "map", "bots", "region", "age", "ping" };
-
-        /// <summary>Mode, map and bots are Steam search filters, so changing them can need new searches; the rest filter on screen.</summary>
-        private static bool NeedsLookup(string kind) => kind == "mode" || kind == "map" || kind == "bots";
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
@@ -61,12 +56,7 @@ namespace Dispatch
         private readonly FollowList follows = new FollowList();
         private readonly RecentList recent = new RecentList();
         private readonly DispatcherTimer watchTimer;
-        /// <summary>A followed host must be gone this long before coming back alerts again, so a map change or a quick re-host stays quiet.</summary>
-        private static readonly TimeSpan GoneAfter = TimeSpan.FromMinutes(3);
-        private readonly Dictionary<string, DateTime> followedSeen = new Dictionary<string, DateTime>();
-
-        /// <summary>Followed hosts a check found not hosting: only a host seen to be away can "appear" and alert.</summary>
-        private readonly HashSet<string> followedAway = new HashSet<string>();
+        private readonly HostWatch hosts = new HostWatch();
         private DateTime? baselineUtc;
         private bool autoRefresh;
         private bool watching;
@@ -266,10 +256,6 @@ namespace Dispatch
             {
                 return;
             }
-            catch (LocatorException e)
-            {
-                lastError = e.Message;
-            }
             catch (LookupException e)
             {
                 lastError = e.Message;
@@ -362,7 +348,7 @@ namespace Dispatch
             if (lastError != null)
             {
                 EmptyText.Text = lastError;
-                ShowEmptyAction("TRY AGAIN");
+                ShowEmptyAction("TRY AGAIN", () => _ = UpdateAsync(true));
             }
             else if (Busy && doneRequests < pendingRequests)
             {
@@ -371,24 +357,29 @@ namespace Dispatch
             else if (browser.Filters.IsHostSearch)
             {
                 EmptyText.Text = "No server hosted by \"" + browser.Filters.ExactHost + "\" right now.\nHost names must match exactly.";
-                ShowEmptyAction("CLEAR SEARCH");
+                ShowEmptyAction("CLEAR SEARCH", () => SearchBox.Text = "");
             }
             else if (!string.IsNullOrWhiteSpace(browser.Filters.Text))
             {
                 EmptyText.Text = "No listed server matches \"" + browser.Filters.Text.Trim() + "\".\nPress Enter to search every server for that exact host name.";
-                ShowEmptyAction("SEARCH EVERY SERVER");
+                var text = browser.Filters.Text;
+                ShowEmptyAction("SEARCH EVERY SERVER", () => SearchEveryServer(text));
             }
             else
             {
                 EmptyText.Text = "No servers match these filters.";
-                ShowEmptyAction("RESET FILTERS");
+                ShowEmptyAction("RESET FILTERS", ResetFilters);
             }
         }
 
-        private void ShowEmptyAction(string text)
+        /// <summary>What the empty-state button does: set together with its label, so the two can't disagree.</summary>
+        private Action emptyAction;
+
+        private void ShowEmptyAction(string text, Action action)
         {
             EmptyAction.Content = text;
             EmptyAction.Visibility = Visibility.Visible;
+            emptyAction = action;
         }
 
         private void SetBusy(bool busy)
@@ -709,12 +700,6 @@ namespace Dispatch
         /// <summary>The countdown ring's dash length, in stroke widths: the circumference of a 22 px ring with a 1.5 px stroke.</summary>
         private const double RingLength = 42.9;
 
-        /// <summary>A host check is trusted this long: a bit over two watch intervals, so a watched host is never "unknown".</summary>
-        private static readonly TimeSpan HostCheckFor = TimeSpan.FromMinutes(2);
-
-        /// <summary>Host checks per lookup run: each is one Steam request, about a third of a second.</summary>
-        private const int MaxHostChecks = 10;
-
         /// <summary>The next automatic refresh is a minute after the last refresh of any kind; the ring shows how close it is.</summary>
         private void RestartCountdown()
         {
@@ -736,7 +721,26 @@ namespace Dispatch
 
         // Toolbar menus are popups, like the filter dropdowns, so a second click on their button closes them.
         private readonly Dictionary<UIElement, Popup> menus = new Dictionary<UIElement, Popup>();
-        private readonly Dictionary<Popup, DateTime> menuClosedUtc = new Dictionary<Popup, DateTime>();
+        private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
+
+        /// <summary>
+        /// A click on an open popup's button first closes the popup (the click lands outside it), then reaches the
+        /// button: within this time of a popup closing, that click leaves it closed instead of reopening it.
+        /// </summary>
+        private static readonly TimeSpan DismissGrace = TimeSpan.FromMilliseconds(250);
+
+        private bool JustClosed(Popup popup) =>
+            popupClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < DismissGrace;
+
+        private void OpenPopup(Popup popup)
+        {
+            popup.IsOpen = true;
+            if (popup.Child is FrameworkElement panel)
+            {
+                Motion.Fade(panel, 0, 1, 140);
+                Motion.SlideFrom(panel, -6, 160);
+            }
+        }
 
         /// <summary>
         /// Opens the menu under this button and returns its empty panel to fill, or returns null when the click
@@ -756,23 +760,10 @@ namespace Dispatch
                     {
                         new CustomPopupPlacement(new Point(target.Width - size.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
                     },
-                    Child = new Border
-                    {
-                        Background = (Brush)FindResource("SurfaceBrush"),
-                        BorderBrush = (Brush)FindResource("LineStrongBrush"),
-                        BorderThickness = new Thickness(1),
-                        Padding = new Thickness(0, 4, 0, 4),
-                        MinWidth = 220,
-                        Child = new StackPanel(),
-                    },
+                    Child = new Border { Style = (Style)FindResource("ToolbarMenu"), Child = new StackPanel() },
                 };
-                // Popups sit outside the window's tree, so the menu sets the window's font itself.
-                TextElement.SetFontFamily(popup.Child, (FontFamily)FindResource("UiFont"));
-                TextElement.SetFontSize(popup.Child, 14);
-                TextElement.SetForeground(popup.Child, (Brush)FindResource("TextBrush"));
-                TextOptions.SetTextFormattingMode(popup.Child, TextFormattingMode.Display);
                 var closing = popup;
-                popup.Closed += (s, e) => menuClosedUtc[closing] = DateTime.UtcNow;
+                popup.Closed += (s, e) => popupClosedUtc[closing] = DateTime.UtcNow;
                 menus[anchor] = popup;
             }
 
@@ -782,7 +773,7 @@ namespace Dispatch
                 return null;
             }
 
-            if (menuClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            if (JustClosed(popup))
             {
                 return null;
             }
@@ -792,13 +783,7 @@ namespace Dispatch
             return panel;
         }
 
-        private void ShowMenu(UIElement anchor)
-        {
-            var popup = menus[anchor];
-            popup.IsOpen = true;
-            Motion.Fade(popup.Child, 0, 1, 140);
-            Motion.SlideFrom(popup.Child, -6, 160);
-        }
+        private void ShowMenu(UIElement anchor) => OpenPopup(menus[anchor]);
 
         private bool MenuOpen(UIElement anchor) => menus.TryGetValue(anchor, out var p) && p.IsOpen;
 
@@ -810,14 +795,14 @@ namespace Dispatch
             }
         }
 
-        /// <summary>One menu line: an optional check column, the content, and a dim note on the right.</summary>
-        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true)
+        /// <summary>One menu line: a check column for a setting (or an empty one to line up with settings), the content, and a dim note on the right.</summary>
+        private Button MenuRow(UIElement anchor, object content, Action click, string note = null, bool? check = null, bool enabled = true, bool alignWithChecks = false)
         {
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (check != null)
+            if (check != null || alignWithChecks)
             {
                 grid.Children.Add(new TextBlock
                 {
@@ -841,12 +826,34 @@ namespace Dispatch
             }
 
             var row = new Button { Style = (Style)FindResource("MenuRow"), Content = grid, IsEnabled = enabled };
+
+            // Screen readers (and UI tests) get the line's text, and whether a setting is on.
+            var text = string.Join(", ", new[] { TextOf(content), note }.Where(t => !string.IsNullOrEmpty(t)));
+            AutomationProperties.SetName(row, check == null ? text : text + (check == true ? ", on" : ", off"));
             row.Click += (s, e) =>
             {
                 menus[anchor].IsOpen = false;
                 click?.Invoke();
             };
             return row;
+        }
+
+        /// <summary>The visible text of menu content: a string, or the text blocks of a two-line entry.</summary>
+        private static string TextOf(object content) =>
+            content is string s ? s
+            : content is DependencyObject d ? string.Join(", ", Descendants(d).OfType<TextBlock>().Select(t => t.Text).Where(t => t.Length > 0))
+            : null;
+
+        private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+            {
+                yield return child;
+                foreach (var deeper in Descendants(child))
+                {
+                    yield return deeper;
+                }
+            }
         }
 
         private UIElement MenuTitle(string text, string note = null)
@@ -874,22 +881,15 @@ namespace Dispatch
             panel.Children.Add(line);
             return panel;
         }
-        /// <summary>The host's current server if known: from a recent check, the list, or the follow watch.</summary>
-        private Server HostingNow(string owner)
-        {
-            if (hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor)
-            {
-                return hostFound.TryGetValue(owner, out var checkedServer) ? checkedServer : null;
-            }
+        private Server HostingNow(string owner) => hosts.HostingNow(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
-            return browser.Current(DateTime.UtcNow).FirstOrDefault(s => s.Owner == owner);
-        }
+        private bool KnownNotHosting(string owner) => hosts.KnownNotHosting(owner, DateTime.UtcNow);
 
-        private bool KnownNotHosting(string owner) =>
-            hostChecked.TryGetValue(owner, out var at) && DateTime.UtcNow - at < HostCheckFor && !hostFound.ContainsKey(owner);
+        private bool NeedsCheck(string owner) => hosts.NeedsCheck(owner, browser.Current(DateTime.UtcNow), DateTime.UtcNow);
 
-        private bool NeedsCheck(string owner) =>
-            HostingNow(owner) == null && !KnownNotHosting(owner);
+        private List<Server> OnlineNow(DateTime now) => hosts.Online(browser.Current(now), now);
+
+        private string HostDetail(string owner, string fallback) => hosts.Detail(owner, browser.Current(DateTime.UtcNow), fallback, DateTime.UtcNow);
 
         /// <summary>
         /// Asks Steam which of these hosts are hosting now: one quick query each, at most ten per run, least
@@ -897,9 +897,7 @@ namespace Dispatch
         /// </summary>
         private async Task<bool> CheckHostsAsync(IEnumerable<string> owners)
         {
-            var list = owners.Distinct()
-                .OrderBy(o => hostChecked.TryGetValue(o, out var at) ? at : DateTime.MinValue)
-                .Take(MaxHostChecks).ToList();
+            var list = hosts.NextToCheck(owners);
             if (list.Count == 0 || demo || Busy || watching)
             {
                 return false;
@@ -919,23 +917,10 @@ namespace Dispatch
                         }
                     }
                 }, null, life.Token);
-                foreach (var owner in list)
-                {
-                    hostChecked[owner] = DateTime.UtcNow;
-                    if (found.TryGetValue(owner, out var s))
-                    {
-                        hostFound[owner] = s;
-                    }
-                    else
-                    {
-                        hostFound.Remove(owner);
-                        followedAway.Add(owner);
-                    }
-                }
-
+                hosts.Record(list, found, DateTime.UtcNow);
                 return true;
             }
-            catch (Exception e) when (e is LookupException || e is LocatorException || e is OperationCanceledException)
+            catch (Exception e) when (e is LookupException || e is OperationCanceledException)
             {
                 // Statuses stay unknown; the menus say so, and the next watch tries again.
                 return false;
@@ -946,24 +931,10 @@ namespace Dispatch
             }
         }
 
-        /// <summary>Servers known to be up right now: recent list answers plus recent host checks.</summary>
-        private List<Server> OnlineNow(DateTime now) =>
-            browser.Current(now)
-                .Concat(hostFound.Where(p => hostChecked.TryGetValue(p.Key, out var at) && now - at < HostCheckFor).Select(p => p.Value))
-                .ToList();
-
-        private string HostDetail(string owner, string fallback)
-        {
-            var now = HostingNow(owner);
-            return now != null ? "Hosting now  ·  " + now.Mode + " · " + now.MapName
-                : KnownNotHosting(owner) ? "Not hosting now"
-                : fallback;
-        }
-
-        private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
+        private void OnRecent(object sender, RoutedEventArgs e) => _ = ShowRecentAsync();
 
         /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
-        private async void ShowRecent()
+        private async Task ShowRecentAsync()
         {
             var panel = BeginMenu(RecentButton);
             if (panel == null)
@@ -1006,10 +977,10 @@ namespace Dispatch
             }
         }
 
-        private void OnFollowing(object sender, RoutedEventArgs e) => ShowFollowing();
+        private void OnFollowing(object sender, RoutedEventArgs e) => _ = ShowFollowingAsync();
 
         /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
-        private async void ShowFollowing()
+        private async Task ShowFollowingAsync()
         {
             var panel = BeginMenu(FollowingButton);
             if (panel == null)
@@ -1107,8 +1078,8 @@ namespace Dispatch
                 Say(copyOnJoin ? "Joining a server also copies its invite link, ready to send to friends." : "Joining no longer copies the invite link.");
             }, check: copyOnJoin));
             panel.Children.Add(MenuSeparator());
-            panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), check: false));
-            panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open(UpdateCheck.RepositoryUrl), VersionText.Text, check: false));
+            panel.Children.Add(MenuRow(MenuButton, "Check for updates", () => _ = CheckForUpdateAsync(true), alignWithChecks: true));
+            panel.Children.Add(MenuRow(MenuButton, "About Dispatch", () => Open(UpdateCheck.RepositoryUrl), VersionText.Text, alignWithChecks: true));
             ShowMenu(MenuButton);
         }
         /// <summary>Copies the joined server's link when that setting is on; returns the note for the status line.</summary>
@@ -1162,8 +1133,7 @@ namespace Dispatch
         private bool copyOnJoin = true;
         private string pastedLink;
         private DateTime nextAutoUtc;
-        private readonly Dictionary<string, Server> hostFound = new Dictionary<string, Server>();
-        private readonly Dictionary<string, DateTime> hostChecked = new Dictionary<string, DateTime>();
+
         private bool errorSounded;
         private bool refreshing;
 
@@ -1345,52 +1315,47 @@ namespace Dispatch
 
         // ---------- filters ----------
 
+        /// <summary>Each filter category's button, value text, dropdown and chip panel.</summary>
+        private Dictionary<FilterKind, (Button Button, TextBlock Value, Popup Popup, Panel Chips)> filterParts;
+
         private void BuildChips()
         {
+            filterParts = new Dictionary<FilterKind, (Button, TextBlock, Popup, Panel)>
+            {
+                [FilterKind.Mode] = (ModeButton, ModeValue, ModePopup, ModeChips),
+                [FilterKind.Map] = (MapButton, MapValue, MapPopup, MapChips),
+                [FilterKind.Region] = (RegionButton, RegionValue, RegionPopup, RegionChips),
+                [FilterKind.Age] = (AgeButton, AgeValue, AgePopup, AgeChips),
+                [FilterKind.Ping] = (PingButton, PingValue, PingPopup, PingChips),
+                [FilterKind.Bots] = (BotButton, BotValue, BotPopup, BotChips),
+            };
+
+            var f = browser.Filters;
             foreach (var mode in Catalog.Modes)
             {
-                ModeChips.Children.Add(MakeChip(mode, mode, browser.Filters.Modes, ModeTip(mode)));
+                ModeChips.Children.Add(MakeChip(mode, mode, f.Modes.Contains(mode), ModeTip(mode), on => OnSetChip(f.Modes, mode, on)));
             }
 
-            foreach (var map in Catalog.Maps.Concat(browser.Filters.Maps.Where(m => !Catalog.Maps.Contains(m))))
+            foreach (var map in Catalog.Maps.Concat(f.Maps.Where(m => !Catalog.Maps.Contains(m, StringComparer.OrdinalIgnoreCase))))
             {
-                MapChips.Children.Add(MakeChip(Catalog.MapName(map), map, browser.Filters.Maps, null));
+                MapChips.Children.Add(MakeChip(Catalog.MapName(map), map, f.Maps.Contains(map), null, on => OnSetChip(f.Maps, map, on)));
             }
 
-            foreach (var limit in PingLimits)
+            foreach (var limit in FilterState.PingLimits)
             {
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = "≤ " + limit + " ms",
-                    Tag = limit,
-                    IsChecked = browser.Filters.MaxPing == limit,
-                    ToolTip = "Hide servers with a higher ping",
-                };
-                chip.Checked += (s, e) => OnPingChip(limit, true);
-                chip.Unchecked += (s, e) => OnPingChip(limit, false);
-                PingChips.Children.Add(chip);
+                PingChips.Children.Add(MakeChip(FilterState.PingLimitText(limit), limit, f.MaxPing == limit, "Hide servers with a higher ping",
+                    on => OnSingleChip(FilterKind.Ping, limit, on)));
             }
 
-            BotChips.Children.Add(MakeChip("On", "true", browser.Filters.Bots, "Servers that fill empty slots with bots"));
-            BotChips.Children.Add(MakeChip("Off", "false", browser.Filters.Bots, "Servers without bots"));
+            BotChips.Children.Add(MakeChip("On", "true", f.Bots.Contains("true"), "Servers that fill empty slots with bots", on => OnSetChip(f.Bots, "true", on)));
+            BotChips.Children.Add(MakeChip("Off", "false", f.Bots.Contains("false"), "Servers without bots", on => OnSetChip(f.Bots, "false", on)));
 
             foreach (var limit in FilterState.AgeLimits)
             {
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = FilterState.AgeLimitText(limit),
-                    Tag = limit,
-                    IsChecked = browser.Filters.AgeLimit == limit,
-                    ToolTip = limit > 0 ? "Servers created recently, likely still filling up" : "Long-running servers, likely with a settled crowd",
-                };
-                chip.Checked += (s, e) => OnAgeChip(limit, true);
-                chip.Unchecked += (s, e) => OnAgeChip(limit, false);
-                AgeChips.Children.Add(chip);
+                var tip = limit > 0 ? "Servers created recently, likely still filling up" : "Long-running servers, likely with a settled crowd";
+                AgeChips.Children.Add(MakeChip(FilterState.AgeLimitText(limit), limit, f.AgeLimit == limit, tip, on => OnSingleChip(FilterKind.Age, limit, on)));
             }
         }
-
         private static string ModeTip(string mode)
         {
             switch (mode)
@@ -1406,26 +1371,29 @@ namespace Dispatch
             }
         }
 
-        private ToggleButton MakeChip(object content, string value, HashSet<string> set, string tip)
+        private ToggleButton MakeChip(object content, object tag, bool isChecked, string tip, Action<bool> onToggle)
         {
-            var chip = new ToggleButton { Style = (Style)FindResource("Chip"), Content = content, Tag = value, IsChecked = set.Contains(value) };
-            if (tip != null)
+            var chip = new ToggleButton { Style = (Style)FindResource("Chip"), Content = content, Tag = tag, IsChecked = isChecked, ToolTip = tip };
+            chip.Checked += (s, e) =>
             {
-                chip.ToolTip = tip;
-            }
-
-            chip.Checked += (s, e) => OnChip(set, value, true);
-            chip.Unchecked += (s, e) => OnChip(set, value, false);
+                if (!quiet)
+                {
+                    onToggle(true);
+                }
+            };
+            chip.Unchecked += (s, e) =>
+            {
+                if (!quiet)
+                {
+                    onToggle(false);
+                }
+            };
             return chip;
         }
 
-        private void OnChip(HashSet<string> set, string value, bool on)
+        /// <summary>A mode, map or bots chip: these are Steam search filters, so new searches may follow.</summary>
+        private void OnSetChip(HashSet<string> set, string value, bool on)
         {
-            if (quiet)
-            {
-                return;
-            }
-
             if (on)
             {
                 set.Add(value);
@@ -1437,19 +1405,11 @@ namespace Dispatch
 
             UpdateFilterSummary();
             Render();
-
-            // Mode, map and bots can need new Steam searches; wait for clicks to settle.
-            debounce.Stop();
-            debounce.Start();
+            QueueLookup();
         }
 
         private void OnRegionChip(IEnumerable<string> codes, bool on)
         {
-            if (quiet)
-            {
-                return;
-            }
-
             foreach (var code in codes)
             {
                 if (on)
@@ -1466,17 +1426,21 @@ namespace Dispatch
             Render();
         }
 
-        private void OnAgeChip(int limit, bool on)
+        /// <summary>Age and ping take one value: picking one replaces the other and closes the dropdown.</summary>
+        private void OnSingleChip(FilterKind kind, int limit, bool on)
         {
-            if (quiet)
+            if (kind == FilterKind.Ping)
             {
-                return;
+                browser.Filters.MaxPing = on ? limit : 0;
+            }
+            else
+            {
+                browser.Filters.AgeLimit = on ? limit : 0;
             }
 
-            browser.Filters.AgeLimit = on ? limit : 0;
             if (on)
             {
-                AgePopup.IsOpen = false;
+                filterParts[kind].Popup.IsOpen = false;
             }
 
             SyncChips();
@@ -1484,30 +1448,12 @@ namespace Dispatch
             Render();
         }
 
-        private void OnPingChip(int limit, bool on)
+        /// <summary>Mode, map and bots changes can need new Steam searches; this waits for clicks to settle first.</summary>
+        private void QueueLookup()
         {
-            if (quiet)
-            {
-                return;
-            }
-
-            quiet = true;
-            foreach (var chip in PingChips.Children.OfType<ToggleButton>())
-            {
-                chip.IsChecked = on && (int)chip.Tag == limit;
-            }
-
-            quiet = false;
-            browser.Filters.MaxPing = on ? limit : 0;
-            if (on)
-            {
-                PingPopup.IsOpen = false;
-            }
-
-            UpdateFilterSummary();
-            Render();
+            debounce.Stop();
+            debounce.Start();
         }
-
         private void UpdateRegionChips()
         {
             var regions = browser.Regions();
@@ -1548,17 +1494,7 @@ namespace Dispatch
                 var content = new StackPanel { Orientation = Orientation.Horizontal };
                 content.Children.Add(new TextBlock { Text = city.Key });
                 content.Children.Add(new TextBlock { Text = count, Margin = new Thickness(7, 0, 0, 0), Opacity = 0.6 });
-                var chip = new ToggleButton
-                {
-                    Style = (Style)FindResource("Chip"),
-                    Content = content,
-                    Tag = members,
-                    IsChecked = members.Any(browser.Filters.Regions.Contains),
-                    ToolTip = tip,
-                };
-                chip.Checked += (s, e) => OnRegionChip(members, true);
-                chip.Unchecked += (s, e) => OnRegionChip(members, false);
-                RegionChips.Children.Add(chip);
+                RegionChips.Children.Add(MakeChip(content, members, members.Any(browser.Filters.Regions.Contains), tip, on => OnRegionChip(members, on)));
             }
 
             if (codes.Count == 0)
@@ -1578,69 +1514,56 @@ namespace Dispatch
         private void UpdateFilterSummary()
         {
             var f = browser.Filters;
-            ShowFilter(ModeButton, ModeValue, Catalog.Modes.Where(f.Modes.Contains).ToList());
-            ShowFilter(MapButton, MapValue, f.Maps.Select(Catalog.MapName).OrderBy(m => m).ToList());
-            ShowFilter(RegionButton, RegionValue, f.Regions.Select(Catalog.RegionName).Distinct().OrderBy(r => r).ToList());
-            ShowFilter(AgeButton, AgeValue, f.AgeLimit != 0 ? new List<string> { FilterState.AgeLimitText(f.AgeLimit) } : new List<string>());
-            ShowFilter(PingButton, PingValue, f.MaxPing > 0 ? new List<string> { "≤ " + f.MaxPing + " ms" } : new List<string>());
-            ShowFilter(BotButton, BotValue, f.OneSidedBots != null ? new List<string> { f.OneSidedBots == "true" ? "On" : "Off" } : new List<string>());
+            foreach (var part in filterParts)
+            {
+                var selected = f.Selected(part.Key);
+                part.Value.Value.Text = FilterState.Summary(selected);
+                part.Value.Button.Tag = selected.Count > 0 ? "on" : null;
+            }
+
             var active = f.ActiveCount + (f.IsHostSearch ? 1 : 0);
             ShowReset(active > 0);
             QueueSave();
         }
 
+        private bool resetHiding;
+
         /// <summary>RESET fades in when something is filtered and out when nothing is.</summary>
         private void ShowReset(bool show)
         {
-            var visible = ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null;
+            var visible = ResetButton.Visibility == Visibility.Visible && !resetHiding;
             if (show && !visible)
             {
-                ResetButton.Tag = null;
+                resetHiding = false;
                 ResetButton.Visibility = Visibility.Visible;
                 Motion.Fade(ResetButton, 0, 1, 180);
             }
-            else if (!show && ResetButton.Visibility == Visibility.Visible && ResetButton.Tag == null)
+            else if (!show && visible)
             {
-                // Tag marks a fade-out in progress, so a quick re-show isn't hidden by it.
-                ResetButton.Tag = "hiding";
+                // Marks the fade-out in progress, so a quick re-show isn't hidden when it ends.
+                resetHiding = true;
                 Motion.Fade(ResetButton, 1, 0, 160, () =>
                 {
-                    if ((string)ResetButton.Tag == "hiding")
+                    if (resetHiding)
                     {
                         ResetButton.Visibility = Visibility.Collapsed;
-                        ResetButton.Tag = null;
+                        resetHiding = false;
                     }
                 });
             }
         }
 
-        private static void ShowFilter(Button button, TextBlock value, List<string> selected)
-        {
-            value.Text = selected.Count == 0 ? "Any" : selected.Count <= 2 ? string.Join(", ", selected) : selected[0] + " +" + (selected.Count - 1);
-            button.Tag = selected.Count > 0 ? "on" : null;
-        }
 
-        private readonly Dictionary<Popup, DateTime> popupClosedUtc = new Dictionary<Popup, DateTime>();
+        private Popup PopupFor(Button button) => filterParts.Values.First(p => p.Button == button).Popup;
 
-        private Popup PopupFor(Button button) =>
-            button == ModeButton ? ModePopup : button == MapButton ? MapPopup : button == RegionButton ? RegionPopup
-            : button == AgeButton ? AgePopup : button == PingButton ? PingPopup : BotPopup;
+        private bool AnyFilterPopupOpen => filterParts.Values.Any(p => p.Popup.IsOpen);
 
         private void OnFilterButton(object sender, RoutedEventArgs e)
         {
             var popup = PopupFor((Button)sender);
-
-            // Clicking the button of an open dropdown closes it (the click itself already dismissed it).
-            if (popupClosedUtc.TryGetValue(popup, out var closed) && DateTime.UtcNow - closed < TimeSpan.FromMilliseconds(250))
+            if (!JustClosed(popup))
             {
-                return;
-            }
-
-            popup.IsOpen = true;
-            if (popup.Child is FrameworkElement panel)
-            {
-                Motion.Fade(panel, 0, 1, 140);
-                Motion.SlideFrom(panel, -6, 160);
+                OpenPopup(popup);
             }
         }
 
@@ -1648,46 +1571,27 @@ namespace Dispatch
 
         private void CloseFilterPopups()
         {
-            foreach (var p in new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup })
+            foreach (var p in filterParts.Values)
             {
-                p.IsOpen = false;
+                p.Popup.IsOpen = false;
             }
         }
 
         private void OnClearCategory(object sender, RoutedEventArgs e)
         {
-            var f = browser.Filters;
-            var kind = (string)((Button)sender).Tag;
-            switch (kind)
+            if (!FilterState.TryKind(((Button)sender).Tag, out var kind))
             {
-                case "mode":
-                    f.Modes.Clear();
-                    break;
-                case "map":
-                    f.Maps.Clear();
-                    break;
-                case "region":
-                    f.Regions.Clear();
-                    break;
-                case "age":
-                    f.AgeLimit = 0;
-                    break;
-                case "ping":
-                    f.MaxPing = 0;
-                    break;
-                case "bots":
-                    f.Bots.Clear();
-                    break;
+                return;
             }
 
+            browser.Filters.Clear(kind);
             CloseFilterPopups();
             SyncChips();
             UpdateFilterSummary();
             Render();
-            if (NeedsLookup(kind))
+            if (FilterState.NeedsLookup(kind))
             {
-                debounce.Stop();
-                debounce.Start();
+                QueueLookup();
             }
         }
         private void OnReset(object sender, RoutedEventArgs e) => ResetFilters();
@@ -1695,9 +1599,9 @@ namespace Dispatch
         private void ResetFilters()
         {
             quiet = true;
-            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, PingChips, BotChips, AgeChips })
+            foreach (var part in filterParts.Values)
             {
-                foreach (var chip in panel.Children.OfType<ToggleButton>())
+                foreach (var chip in part.Chips.Children.OfType<ToggleButton>())
                 {
                     chip.IsChecked = false;
                 }
@@ -1805,26 +1709,7 @@ namespace Dispatch
             }
         }
 
-        private void OnEmptyAction(object sender, RoutedEventArgs e)
-        {
-            if (lastError != null)
-            {
-                _ = UpdateAsync(true);
-            }
-            else if (browser.Filters.IsHostSearch)
-            {
-                SearchBox.Text = "";
-            }
-            else if (!string.IsNullOrWhiteSpace(browser.Filters.Text))
-            {
-                SearchEveryServer(browser.Filters.Text);
-            }
-            else
-            {
-                ResetFilters();
-            }
-        }
-
+        private void OnEmptyAction(object sender, RoutedEventArgs e) => emptyAction?.Invoke();
         // ---------- sorting ----------
 
         private void OnSort(object sender, RoutedEventArgs e)
@@ -1891,7 +1776,7 @@ namespace Dispatch
         {
             while (d != null && !(d is ListBoxItem))
             {
-                if (d is FrameworkElement fe && fe.Tag is string kind && (FilterKinds.Contains(kind) || kind == "star"))
+                if (d is FrameworkElement fe && (FilterState.TryKind(fe.Tag, out _) || "star".Equals(fe.Tag)))
                 {
                     return fe;
                 }
@@ -1904,142 +1789,42 @@ namespace Dispatch
 
         private void OnCellClick(object sender, MouseButtonEventArgs e)
         {
-            if (sender is FrameworkElement cell && cell.DataContext is Server s)
+            if (sender is FrameworkElement cell && cell.DataContext is Server s && FilterState.TryKind(cell.Tag, out var kind))
             {
-                ToggleFilter((string)cell.Tag, s);
+                ToggleFilter(kind, s);
             }
         }
 
         private void OnCellTip(object sender, ToolTipEventArgs e)
         {
-            if (!(sender is FrameworkElement cell) || !(cell.DataContext is Server s) || FilterLabel((string)cell.Tag, s) == null)
+            if (!(sender is FrameworkElement cell) || !(cell.DataContext is Server s) ||
+                !FilterState.TryKind(cell.Tag, out var kind) || FilterState.Label(kind, s) == null)
             {
                 e.Handled = true;
                 return;
             }
 
-            cell.ToolTip = FilterAction((string)cell.Tag, s);
+            cell.ToolTip = browser.Filters.ActionText(kind, s);
         }
 
-        /// <summary>What a click on this value filters by, or null when it can't filter.</summary>
-        private static string FilterLabel(string kind, Server s)
+        private void ToggleFilter(FilterKind kind, Server s)
         {
-            switch (kind)
-            {
-                case "mode":
-                    return s.Mode.Length > 0 ? s.Mode : null;
-                case "map":
-                    return s.Map.Length > 0 ? s.MapName : null;
-                case "bots":
-                    return s.Bots == "true" ? "bots on" : s.Bots == "false" ? "bots off" : null;
-                case "region":
-                    return s.Region.Length > 0 ? s.RegionName : null;
-                case "age":
-                    var age = FilterState.AgeLimitFor(s.AgeMinutes);
-                    return age != 0 ? "age " + FilterState.AgeLimitText(age).ToLowerInvariant() : null;
-                case "ping":
-                    var limit = FilterState.LimitFor(s.Ping);
-                    return limit > 0 ? "ping ≤ " + limit + " ms" : null;
-                default:
-                    return null;
-            }
-        }
-
-        private bool IsFilterActive(string kind, Server s)
-        {
-            var f = browser.Filters;
-            switch (kind)
-            {
-                case "mode":
-                    return f.Modes.Contains(s.Mode);
-                case "map":
-                    return f.Maps.Contains(s.Map);
-                case "bots":
-                    return f.OneSidedBots == s.Bots;
-                case "region":
-                    return f.Regions.Contains(s.Region);
-                case "age":
-                    return f.AgeLimit != 0 && f.AgeLimit == FilterState.AgeLimitFor(s.AgeMinutes);
-                case "ping":
-                    return f.MaxPing > 0 && f.MaxPing == FilterState.LimitFor(s.Ping);
-                default:
-                    return false;
-            }
-        }
-
-        private string FilterAction(string kind, Server s)
-        {
-            var label = FilterLabel(kind, s);
-            return IsFilterActive(kind, s) ? "Remove the " + label + " filter" : "Filter by " + label;
-        }
-
-        private void ToggleFilter(string kind, Server s)
-        {
-            var label = FilterLabel(kind, s);
+            var label = FilterState.Label(kind, s);
             if (label == null)
             {
                 return;
             }
 
-            var f = browser.Filters;
-            var removing = IsFilterActive(kind, s);
-            switch (kind)
-            {
-                case "mode":
-                    Toggle(f.Modes, s.Mode, removing);
-                    break;
-                case "map":
-                    Toggle(f.Maps, s.Map, removing);
-                    break;
-                case "bots":
-                    f.Bots.Clear();
-                    if (!removing)
-                    {
-                        f.Bots.Add(s.Bots);
-                    }
-
-                    break;
-                case "region":
-                    // One city can have several relays (sto, sto2): toggle them together, like the chip.
-                    var codes = browser.Regions().Select(r => r.Code).Append(s.Region)
-                        .Where(c => Catalog.RegionName(c) == s.RegionName).Distinct(StringComparer.OrdinalIgnoreCase);
-                    foreach (var code in codes)
-                    {
-                        Toggle(f.Regions, code, removing);
-                    }
-
-                    break;
-                case "age":
-                    f.AgeLimit = removing ? 0 : FilterState.AgeLimitFor(s.AgeMinutes);
-                    break;
-                case "ping":
-                    f.MaxPing = removing ? 0 : FilterState.LimitFor(s.Ping);
-                    break;
-            }
-
+            var removing = browser.Filters.Toggle(kind, s, browser.Regions().Select(r => r.Code));
             SyncChips();
             UpdateFilterSummary();
             Render();
             Say(removing ? "Removed the " + label + " filter." : "Filtering by " + label + ". Click it again, or Reset, to undo.");
-            if (NeedsLookup(kind))
+            if (FilterState.NeedsLookup(kind))
             {
-                debounce.Stop();
-                debounce.Start();
+                QueueLookup();
             }
         }
-
-        private static void Toggle(HashSet<string> set, string value, bool remove)
-        {
-            if (remove)
-            {
-                set.Remove(value);
-            }
-            else
-            {
-                set.Add(value);
-            }
-        }
-
         /// <summary>Makes every chip show the current filters after a change made elsewhere.</summary>
         private void SyncChips()
         {
@@ -2096,14 +1881,14 @@ namespace Dispatch
 
             var separator = new Separator { Tag = "filter" };
             RowMenu.Items.Add(separator);
-            foreach (var kind in FilterKinds)
+            foreach (var kind in FilterState.Kinds)
             {
-                if (FilterLabel(kind, s) == null)
+                if (FilterState.Label(kind, s) == null)
                 {
                     continue;
                 }
 
-                var item = new MenuItem { Header = FilterAction(kind, s), Tag = "filter" };
+                var item = new MenuItem { Header = browser.Filters.ActionText(kind, s), Tag = "filter" };
                 var k = kind;
                 item.Click += (o, a) => ToggleFilter(k, s);
                 RowMenu.Items.Add(item);
@@ -2129,7 +1914,7 @@ namespace Dispatch
                 s.IsNewRound = demo ? DemoData.IsNewRound(s.Id) : now - browser.RoundStartUtc(s.Id) < NewRoundFor;
             }
 
-            follows.Refresh(all.Concat(hostFound.Values));
+            follows.Refresh(all.Concat(hosts.Found));
             var online = OnlineNow(now);
             if (!Busy && !watching)
             {
@@ -2151,18 +1936,7 @@ namespace Dispatch
                 return;
             }
 
-            // A host alerts only after being seen away: gone for a while since last seen, or found not hosting by
-            // a check. A host simply noticed for the first time (online at start, or outside the filters) doesn't.
-            var online = servers.Where(s => follows.Contains(s.Owner)).GroupBy(s => s.Owner).Select(g => g.First()).ToList();
-            var appeared = online.Where(s => followedSeen.TryGetValue(s.Owner, out var last)
-                ? now - last > GoneAfter
-                : followedAway.Contains(s.Owner)).ToList();
-            foreach (var s in online)
-            {
-                followedSeen[s.Owner] = now;
-                followedAway.Remove(s.Owner);
-            }
-
+            var appeared = hosts.Appeared(servers, follows.Contains, now);
             if (appeared.Count > 0)
             {
                 Alert(appeared);
@@ -2213,7 +1987,7 @@ namespace Dispatch
             if (on)
             {
                 // Already online when followed: no alert for it now.
-                followedSeen[s.Owner] = DateTime.UtcNow;
+                hosts.MarkSeen(s.Owner, DateTime.UtcNow);
             }
 
             Render();
@@ -2353,18 +2127,18 @@ namespace Dispatch
                 return;
             }
 
-            if (!asked && settings.Get("updateCheck", "1") == "0")
+            if (!asked && settings.Get(Preferences.Keys.UpdateCheck, "1") == "0")
             {
                 return;
             }
 
             var current = Assembly.GetExecutingAssembly().GetName().Version;
-            if (UpdateCheck.TryVersion(settings.Get("updateTag"), out var cached))
+            if (UpdateCheck.TryVersion(settings.Get(Preferences.Keys.UpdateTag), out var cached))
             {
-                ShowUpdate(new ReleaseInfo(cached, settings.Get("updateTag"), settings.Get("updateUrl")), current);
+                ShowUpdate(new ReleaseInfo(cached, settings.Get(Preferences.Keys.UpdateTag), settings.Get(Preferences.Keys.UpdateUrl)), current);
             }
 
-            long.TryParse(settings.Get("updateCheckedAt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
+            long.TryParse(settings.Get(Preferences.Keys.UpdateCheckedAt), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks);
             if (!asked && DateTime.UtcNow - new DateTime(Math.Max(0, ticks), DateTimeKind.Utc) < UpdateCheck.Interval)
             {
                 return;
@@ -2382,11 +2156,11 @@ namespace Dispatch
                     : UpdateCheck.IsNewer(latest, current) ? "Update available: " + latest.Tag + ". Click it in the title bar."
                     : "You're on the latest version.");
             }
-            settings.Set("updateCheckedAt", DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+            settings.Set(Preferences.Keys.UpdateCheckedAt, DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
             if (latest != null)
             {
-                settings.Set("updateTag", latest.Tag);
-                settings.Set("updateUrl", latest.Url);
+                settings.Set(Preferences.Keys.UpdateTag, latest.Tag);
+                settings.Set(Preferences.Keys.UpdateUrl, latest.Url);
                 ShowUpdate(latest, current);
             }
 
@@ -2444,7 +2218,7 @@ namespace Dispatch
         {
             var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
             var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            if (e.Key == Key.Escape && (new[] { ModePopup, MapPopup, RegionPopup, AgePopup, PingPopup, BotPopup }.Any(p => p.IsOpen) || menus.Values.Any(p => p.IsOpen)))
+            if (e.Key == Key.Escape && (AnyFilterPopupOpen || menus.Values.Any(p => p.IsOpen)))
             {
                 e.Handled = true;
                 CloseFilterPopups();
@@ -2469,7 +2243,7 @@ namespace Dispatch
             else if (ctrl && e.Key == Key.H)
             {
                 e.Handled = true;
-                ShowRecent();
+                _ = ShowRecentAsync();
             }
             else if (ctrl && e.Key == Key.D && List.SelectedItem is Server picked)
             {
@@ -2597,7 +2371,7 @@ namespace Dispatch
                 var now = await client.FetchAsync(LobbyQuery.HostId(owner), life.Token);
                 return (now.FirstOrDefault(x => x.Owner == owner), true);
             }
-            catch (Exception e) when (e is LookupException || e is LocatorException || e is OperationCanceledException)
+            catch (Exception e) when (e is LookupException || e is OperationCanceledException)
             {
                 return (null, false);
             }
@@ -2762,75 +2536,39 @@ namespace Dispatch
 
         private void RestoreSettings()
         {
-            var f = browser.Filters;
-            foreach (var m in settings.GetList("modes"))
-            {
-                f.Modes.Add(m);
-            }
-
-            foreach (var m in settings.GetList("maps"))
-            {
-                f.Maps.Add(m);
-            }
-
-            foreach (var b in settings.GetList("bots"))
-            {
-                f.Bots.Add(b);
-            }
-
-            foreach (var r in settings.GetList("regions"))
-            {
-                f.Regions.Add(r);
-            }
-
-            f.MaxPing = PingLimits.Contains((int)settings.GetDouble("maxPing", 0)) ? (int)settings.GetDouble("maxPing", 0) : 0;
-            f.AgeLimit = FilterState.AgeLimits.Contains((int)settings.GetDouble("ageLimit", 0)) ? (int)settings.GetDouble("ageLimit", 0) : 0;
-            lobbyAge.Load(settings.GetRecords("ageAnchors"), DateTime.UtcNow);
-
-            if (Enum.TryParse(settings.Get("sort"), out SortKey key) && Enum.IsDefined(typeof(SortKey), key))
-            {
-                sortKey = key;
-                sortDescending = settings.Get("descending") == "1";
-            }
-
-            client.Location = settings.Get("pingLocation");
-            if (long.TryParse(settings.Get("pingLocationTime"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks) && ticks > 0)
-            {
-                client.LocationUtc = new DateTime(ticks, DateTimeKind.Utc);
-            }
-
-            follows.Load(settings.GetRecords("followed"));
+            var p = Preferences.Read(settings, browser.Filters, follows, recent, lobbyAge, DateTime.UtcNow);
             if (demo)
             {
                 follows.Toggle(DemoData.FollowedOwner, DemoData.FollowedName);
             }
-            recent.Load(settings.GetRecords("recent"));
-            autoRefresh = settings.Get("autoRefresh") == "1";
-            sounds.Enabled = settings.Get("sounds", "1") == "1";
-            copyOnJoin = settings.Get("copyOnJoin", "1") == "1";
+
+            sortKey = p.Sort;
+            sortDescending = p.Descending;
+            client.Location = p.PingLocation;
+            client.LocationUtc = p.PingLocationUtc;
+            autoRefresh = p.AutoRefresh;
+            sounds.Enabled = p.Sounds;
+            copyOnJoin = p.CopyOnJoin;
             quiet = true;
             AutoToggle.IsChecked = autoRefresh;
             quiet = false;
             ShowAutoState();
 
-
-            var width = settings.GetDouble("width", Width);
-            var height = settings.GetDouble("height", Height);
-            var left = settings.GetDouble("left", double.NaN);
-            var top = settings.GetDouble("top", double.NaN);
-            Width = Math.Max(MinWidth, Math.Min(width, SystemParameters.VirtualScreenWidth));
-            Height = Math.Max(MinHeight, Math.Min(height, SystemParameters.VirtualScreenHeight));
-            if (!double.IsNaN(left) && !double.IsNaN(top) &&
-                left >= SystemParameters.VirtualScreenLeft - 40 && top >= SystemParameters.VirtualScreenTop - 10 &&
-                left + 120 <= SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth &&
-                top + 60 <= SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight)
+            if (!double.IsNaN(p.Width) && !double.IsNaN(p.Height))
             {
-                WindowStartupLocation = WindowStartupLocation.Manual;
-                Left = left;
-                Top = top;
+                Width = Math.Max(MinWidth, Math.Min(p.Width, SystemParameters.VirtualScreenWidth));
+                Height = Math.Max(MinHeight, Math.Min(p.Height, SystemParameters.VirtualScreenHeight));
             }
 
-            if (settings.Get("maximized") == "1")
+            if (Preferences.IsOnScreen(p.Left, p.Top, SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = p.Left;
+                Top = p.Top;
+            }
+
+            if (p.Maximized)
             {
                 WindowState = WindowState.Maximized;
             }
@@ -2838,33 +2576,22 @@ namespace Dispatch
 
         private void SaveSettings()
         {
-            var f = browser.Filters;
-            settings.SetList("modes", f.Modes);
-            settings.SetList("maps", f.Maps);
-            settings.SetList("bots", f.Bots);
-            settings.SetList("regions", f.Regions);
-            settings.SetDouble("maxPing", f.MaxPing);
-            settings.SetDouble("ageLimit", f.AgeLimit);
-            settings.SetRecords("ageAnchors", lobbyAge.ToRecords());
-            settings.Set("sort", sortKey.ToString());
-            settings.Set("descending", sortDescending ? "1" : "0");
-            settings.SetRecords("followed", follows.ToRecords());
-            settings.SetRecords("recent", recent.ToRecords());
-            settings.Set("autoRefresh", autoRefresh ? "1" : "0");
-            settings.Set("sounds", sounds.Enabled ? "1" : "0");
-            settings.Set("copyOnJoin", copyOnJoin ? "1" : "0");
-            if (!string.IsNullOrEmpty(client.Location))
-            {
-                settings.Set("pingLocation", client.Location);
-                settings.Set("pingLocationTime", client.LocationUtc.Ticks.ToString(CultureInfo.InvariantCulture));
-            }
-
             var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
-            settings.SetDouble("left", bounds.Left);
-            settings.SetDouble("top", bounds.Top);
-            settings.SetDouble("width", bounds.Width);
-            settings.SetDouble("height", bounds.Height);
-            settings.Set("maximized", wasMaximized ? "1" : "0");
+            new Preferences
+            {
+                Sort = sortKey,
+                Descending = sortDescending,
+                AutoRefresh = autoRefresh,
+                Sounds = sounds.Enabled,
+                CopyOnJoin = copyOnJoin,
+                PingLocation = client.Location,
+                PingLocationUtc = client.LocationUtc,
+                Left = bounds.Left,
+                Top = bounds.Top,
+                Width = bounds.Width,
+                Height = bounds.Height,
+                Maximized = wasMaximized,
+            }.Write(settings, browser.Filters, follows, recent, lobbyAge);
             settings.Save();
         }
     }
