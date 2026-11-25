@@ -5,6 +5,9 @@ namespace Dispatch.Model
     /// <summary>One Bodycam server, as listed in Steam's public lobby list.</summary>
     internal sealed class Server
     {
+        /// <summary>Ping not known (yet).</summary>
+        public const int NoPing = -1;
+
         public string Id { get; set; } = "";
         public string Owner { get; set; } = "";
         public string Name { get; set; } = "";
@@ -13,6 +16,9 @@ namespace Dispatch.Model
         public string Bots { get; set; } = "";
         public string Region { get; set; } = "";
         public int Limit { get; set; }
+
+        /// <summary>Estimated round trip in ms through Steam's relays, or <see cref="NoPing"/>.</summary>
+        public int Ping { get; set; } = NoPing;
 
         /// <summary>Position in Steam's nearest-first answer.</summary>
         public int Rank { get; set; }
@@ -24,5 +30,9 @@ namespace Dispatch.Model
         public string BotsText => Bots == "true" ? "On" : Bots == "false" ? "Off" : "—";
         public string SlotsText => Limit > 0 ? Limit.ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
         public string Link => JoinLink.Format(Id, Owner);
+        public string PingText => Ping >= 0 ? Ping.ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
+
+        /// <summary>Good, Fair, Poor or Unknown; drives the ping colour.</summary>
+        public string PingLevel => Ping < 0 ? "Unknown" : Ping <= 70 ? "Good" : Ping <= 140 ? "Fair" : "Poor";
     }
 }

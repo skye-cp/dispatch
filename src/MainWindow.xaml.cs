@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,26 +11,32 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Dispatch.Model;
 using Dispatch.Steam;
+using SortKey = Dispatch.Model.SortKey;
 
 namespace Dispatch
 {
     public partial class MainWindow : Window
     {
+        private const int ClipboardUpdateMessage = 0x031D;
         private static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan MessageFor = TimeSpan.FromSeconds(6);
+        private static readonly int[] PingLimits = { 50, 100, 150 };
 
         private readonly ServerBrowser browser = new ServerBrowser();
         private readonly LobbyClient client = new LobbyClient();
         private readonly Settings settings = Settings.Load();
         private readonly DispatcherTimer debounce;
         private readonly DispatcherTimer messageTimer;
+        private readonly DispatcherTimer clock;
         private readonly Storyboard progress;
 
-        private SortKey sortKey = SortKey.Nearest;
+        private SortKey sortKey = SortKey.Ping;
         private bool sortDescending;
         private CancellationTokenSource lookup;
         private int pendingRequests;
@@ -55,6 +63,14 @@ namespace Dispatch
                 messageTimer.Stop();
                 ShowDefaultStatus();
             };
+            clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            clock.Tick += (s, e) =>
+            {
+                if (!messageTimer.IsEnabled)
+                {
+                    ShowDefaultStatus();
+                }
+            };
 
             var slide = new DoubleAnimation(-160, 1600, new Duration(TimeSpan.FromSeconds(1.2))) { RepeatBehavior = RepeatBehavior.Forever };
             Storyboard.SetTarget(slide, ProgressBar);
@@ -62,16 +78,47 @@ namespace Dispatch
             progress = new Storyboard();
             progress.Children.Add(slide);
 
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            VersionText.Text = "v" + version.Major + "." + version.Minor + "." + version.Build;
+
             RestoreSettings();
             BuildChips();
             UpdateHeaders();
             UpdateFilterSummary();
 
-            Loaded += (s, e) => _ = UpdateAsync(false);
+            Loaded += (s, e) =>
+            {
+                clock.Start();
+                _ = UpdateAsync(false);
+            };
             Activated += (s, e) => CheckClipboard();
             Closing += (s, e) => SaveSettings();
             StateChanged += (s, e) => OnWindowState();
             PreviewKeyDown += OnWindowKey;
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            var handle = new WindowInteropHelper(this).Handle;
+            HwndSource.FromHwnd(handle)?.AddHook(WndProc);
+            AddClipboardFormatListener(handle);
+            CheckClipboard();
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == ClipboardUpdateMessage)
+            {
+                // Read after the copying app has finished with the clipboard.
+                Dispatcher.BeginInvoke(new Action(CheckClipboard), DispatcherPriority.Background);
+            }
+
+            return IntPtr.Zero;
         }
 
         // ---------- data ----------
@@ -101,17 +148,25 @@ namespace Dispatch
 
             try
             {
-                await client.RunAsync(missing, (index, servers) => Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (cts.IsCancellationRequested || index < 0 || index >= missing.Count)
+                await client.RunAsync(
+                    missing,
+                    (index, servers) => Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        return;
-                    }
+                        if (cts.IsCancellationRequested || index < 0 || index >= missing.Count)
+                        {
+                            return;
+                        }
 
-                    browser.Store(missing[index], servers, DateTime.UtcNow);
-                    doneRequests++;
-                    Render();
-                })), cts.Token);
+                        browser.Store(missing[index], servers, DateTime.UtcNow);
+                        doneRequests++;
+                        Render();
+                    })),
+                    pings => Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        browser.ApplyPings(pings);
+                        Render();
+                    })),
+                    cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -139,6 +194,8 @@ namespace Dispatch
                 Render();
             }
         }
+
+        private bool Busy => lookup != null && !lookup.IsCancellationRequested && ProgressTrack.Visibility == Visibility.Visible;
 
         private void Render()
         {
@@ -175,7 +232,7 @@ namespace Dispatch
                 EmptyText.Text = lastError;
                 ShowEmptyAction("TRY AGAIN");
             }
-            else if (lookup != null && !lookup.IsCancellationRequested && doneRequests < pendingRequests)
+            else if (Busy && doneRequests < pendingRequests)
             {
                 EmptyText.Text = "Asking Steam for servers…";
             }
@@ -205,6 +262,7 @@ namespace Dispatch
         private void SetBusy(bool busy)
         {
             ProgressTrack.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
+            RefreshButton.IsEnabled = !busy;
             if (busy)
             {
                 progress.Begin(this, true);
@@ -219,30 +277,37 @@ namespace Dispatch
 
         private void ShowDefaultStatus()
         {
-            Status.Foreground = (System.Windows.Media.Brush)FindResource("TextDimBrush");
             if (lastError != null)
             {
                 Status.Text = lastError;
-                Status.Foreground = (System.Windows.Media.Brush)FindResource("RedHotBrush");
+                Status.Foreground = (Brush)FindResource("RedHotBrush");
                 return;
             }
 
-            var busy = lookup != null && !lookup.IsCancellationRequested && doneRequests < pendingRequests && ProgressTrack.IsVisible;
-            if (busy)
+            Status.Foreground = (Brush)FindResource("TextDimBrush");
+            if (Busy)
             {
-                Status.Text = "Asking Steam…  " + doneRequests + " of " + pendingRequests + " searches";
+                Status.Text = doneRequests < pendingRequests
+                    ? "Asking Steam…  " + doneRequests + " of " + pendingRequests + " searches"
+                    : "Measuring ping through Steam's relays…";
                 return;
             }
 
             var pool = browser.Pool().Count;
             var updated = browser.UpdatedUtc();
-            Status.Text = pool + " servers from Steam" + (updated.HasValue ? "  ·  updated " + updated.Value.ToLocalTime().ToString("HH:mm:ss") : "");
+            Status.Text = pool + " servers from Steam" + (updated.HasValue ? "  ·  updated " + Ago(DateTime.UtcNow - updated.Value) : "");
         }
+
+        private static string Ago(TimeSpan age) =>
+            age.TotalSeconds < 5 ? "just now"
+            : age.TotalSeconds < 60 ? (int)age.TotalSeconds + " s ago"
+            : age.TotalMinutes < 60 ? (int)age.TotalMinutes + " min ago"
+            : "over an hour ago";
 
         private void Say(string text, bool problem = false)
         {
             Status.Text = text;
-            Status.Foreground = (System.Windows.Media.Brush)FindResource(problem ? "RedHotBrush" : "TextBrush");
+            Status.Foreground = (Brush)FindResource(problem ? "RedHotBrush" : "TextBrush");
             messageTimer.Stop();
             messageTimer.Start();
         }
@@ -253,9 +318,7 @@ namespace Dispatch
         {
             foreach (var mode in Catalog.Modes)
             {
-                ModeChips.Children.Add(MakeChip(mode, mode, browser.Filters.Modes, mode == Catalog.Training
-                    ? "Private shooting ranges. Hidden unless selected."
-                    : null));
+                ModeChips.Children.Add(MakeChip(mode, mode, browser.Filters.Modes, ModeTip(mode)));
             }
 
             foreach (var map in Catalog.Maps.Concat(browser.Filters.Maps.Where(m => !Catalog.Maps.Contains(m))))
@@ -263,8 +326,37 @@ namespace Dispatch
                 MapChips.Children.Add(MakeChip(Catalog.MapName(map), map, browser.Filters.Maps, null));
             }
 
+            foreach (var limit in PingLimits)
+            {
+                var chip = new ToggleButton
+                {
+                    Style = (Style)FindResource("Chip"),
+                    Content = "≤ " + limit + " ms",
+                    IsChecked = browser.Filters.MaxPing == limit,
+                    ToolTip = "Hide servers with a higher ping",
+                };
+                chip.Checked += (s, e) => OnPingChip(limit, true);
+                chip.Unchecked += (s, e) => OnPingChip(limit, false);
+                PingChips.Children.Add(chip);
+            }
+
             BotChips.Children.Add(MakeChip("On", "true", browser.Filters.Bots, "Servers that fill empty slots with bots"));
             BotChips.Children.Add(MakeChip("Off", "false", browser.Filters.Bots, "Servers without bots"));
+        }
+
+        private static string ModeTip(string mode)
+        {
+            switch (mode)
+            {
+                case Catalog.Training:
+                    return "Private shooting ranges. Hidden unless selected.";
+                case "Wingman":
+                    return "2v2. Matches can't be joined once they have started.";
+                case "Zombie":
+                    return "Co-op against zombies, up to 4 players.";
+                default:
+                    return null;
+            }
         }
 
         private ToggleButton MakeChip(object content, string value, HashSet<string> set, string tip)
@@ -297,24 +389,63 @@ namespace Dispatch
             }
 
             UpdateFilterSummary();
-            if (set == browser.Filters.Regions)
+            Render();
+            if (set != browser.Filters.Regions)
             {
-                Render();
-            }
-            else
-            {
-                Render();
+                // Mode, map and bots can need new Steam searches; wait for clicks to settle.
                 debounce.Stop();
                 debounce.Start();
             }
         }
 
+        private void OnRegionChip(IEnumerable<string> codes, bool on)
+        {
+            if (quiet)
+            {
+                return;
+            }
+
+            foreach (var code in codes)
+            {
+                if (on)
+                {
+                    browser.Filters.Regions.Add(code);
+                }
+                else
+                {
+                    browser.Filters.Regions.Remove(code);
+                }
+            }
+
+            UpdateFilterSummary();
+            Render();
+        }
+
+        private void OnPingChip(int limit, bool on)
+        {
+            if (quiet)
+            {
+                return;
+            }
+
+            quiet = true;
+            foreach (var chip in PingChips.Children.OfType<ToggleButton>())
+            {
+                chip.IsChecked = on && (string)chip.Content == "≤ " + limit + " ms";
+            }
+
+            quiet = false;
+            browser.Filters.MaxPing = on ? limit : 0;
+            UpdateFilterSummary();
+            Render();
+        }
+
         private void UpdateRegionChips()
         {
-            var counts = browser.Regions();
-            var codes = counts.Select(p => p.Key).ToList();
+            var regions = browser.Regions();
+            var codes = regions.Select(r => r.Code).ToList();
             codes.AddRange(browser.Filters.Regions.Where(r => !codes.Contains(r, StringComparer.OrdinalIgnoreCase)));
-            var key = string.Join(",", codes) + "|" + string.Join(",", counts.Select(p => p.Value));
+            var key = string.Join(",", codes) + "|" + string.Join(",", regions.Select(r => r.Count + ":" + r.Ping));
             if (key == regionChipKeys)
             {
                 return;
@@ -323,13 +454,27 @@ namespace Dispatch
             regionChipKeys = key;
             quiet = true;
             RegionChips.Children.Clear();
-            foreach (var code in codes)
+
+            // One chip per city: Steam can run several relays in one place (sto, sto2).
+            foreach (var city in codes.GroupBy(Catalog.RegionName, StringComparer.CurrentCultureIgnoreCase))
             {
-                var count = counts.FirstOrDefault(p => string.Equals(p.Key, code, StringComparison.OrdinalIgnoreCase)).Value;
+                var members = city.ToList();
+                var infos = regions.Where(r => members.Contains(r.Code, StringComparer.OrdinalIgnoreCase)).ToList();
+                var count = infos.Sum(r => r.Count);
+                var ping = infos.Where(r => r.Ping >= 0).Select(r => r.Ping).DefaultIfEmpty(Server.NoPing).Min();
                 var content = new StackPanel { Orientation = Orientation.Horizontal };
-                content.Children.Add(new TextBlock { Text = Catalog.RegionName(code) });
-                content.Children.Add(new TextBlock { Text = count.ToString(), Margin = new Thickness(7, 0, 0, 0), Opacity = 0.6 });
-                RegionChips.Children.Add(MakeChip(content, code, browser.Filters.Regions, "Relay region " + code.ToUpperInvariant()));
+                content.Children.Add(new TextBlock { Text = city.Key });
+                content.Children.Add(new TextBlock { Text = count.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(7, 0, 0, 0), Opacity = 0.6 });
+                var chip = new ToggleButton
+                {
+                    Style = (Style)FindResource("Chip"),
+                    Content = content,
+                    IsChecked = members.Any(browser.Filters.Regions.Contains),
+                    ToolTip = "Steam relay " + string.Join(", ", members.Select(c => c.ToUpperInvariant())) + (ping >= 0 ? "  ·  best ping " + ping + " ms" : ""),
+                };
+                chip.Checked += (s, e) => OnRegionChip(members, true);
+                chip.Unchecked += (s, e) => OnRegionChip(members, false);
+                RegionChips.Children.Add(chip);
             }
 
             if (codes.Count == 0)
@@ -337,7 +482,7 @@ namespace Dispatch
                 RegionChips.Children.Add(new TextBlock
                 {
                     Text = "Regions appear once servers load.",
-                    Foreground = (System.Windows.Media.Brush)FindResource("TextFaintBrush"),
+                    Foreground = (Brush)FindResource("TextFaintBrush"),
                     Margin = new Thickness(0, 4, 0, 10),
                 });
             }
@@ -361,7 +506,12 @@ namespace Dispatch
 
             if (f.Regions.Count > 0)
             {
-                parts.Add(string.Join(", ", f.Regions.Select(Catalog.RegionName).OrderBy(r => r)));
+                parts.Add(string.Join(", ", f.Regions.Select(Catalog.RegionName).Distinct().OrderBy(r => r)));
+            }
+
+            if (f.MaxPing > 0)
+            {
+                parts.Add("Ping ≤ " + f.MaxPing + " ms");
             }
 
             if (f.OneSidedBots != null)
@@ -380,6 +530,7 @@ namespace Dispatch
         {
             FilterPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
             FilterChevron.Text = open ? "" : "";
+            FilterToggle.ToolTip = open ? "Hide filters" : "Show filters";
             UpdateFilterSummary();
         }
 
@@ -388,7 +539,7 @@ namespace Dispatch
         private void ResetFilters()
         {
             quiet = true;
-            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, BotChips })
+            foreach (var panel in new[] { ModeChips, MapChips, RegionChips, PingChips, BotChips })
             {
                 foreach (var chip in panel.Children.OfType<ToggleButton>())
                 {
@@ -432,15 +583,7 @@ namespace Dispatch
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                var text = SearchBox.Text.Trim();
-                if (text.Length == 0)
-                {
-                    return;
-                }
-
-                browser.Filters.ExactHost = text;
-                UpdateFilterSummary();
-                _ = UpdateAsync(true);
+                SearchEveryServer(SearchBox.Text);
             }
             else if (e.Key == Key.Escape)
             {
@@ -462,6 +605,19 @@ namespace Dispatch
             }
         }
 
+        private void SearchEveryServer(string name)
+        {
+            var text = (name ?? "").Trim();
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            browser.Filters.ExactHost = text;
+            UpdateFilterSummary();
+            _ = UpdateAsync(true);
+        }
+
         private void OnClearSearch(object sender, RoutedEventArgs e)
         {
             SearchBox.Text = "";
@@ -472,10 +628,10 @@ namespace Dispatch
         {
             if (List.SelectedItem is Server s)
             {
+                quiet = true;
                 SearchBox.Text = s.Name;
-                browser.Filters.ExactHost = s.Name;
-                UpdateFilterSummary();
-                _ = UpdateAsync(true);
+                quiet = false;
+                SearchEveryServer(s.Name);
             }
         }
 
@@ -491,9 +647,7 @@ namespace Dispatch
             }
             else if (!string.IsNullOrWhiteSpace(browser.Filters.Text))
             {
-                browser.Filters.ExactHost = browser.Filters.Text.Trim();
-                UpdateFilterSummary();
-                _ = UpdateAsync(true);
+                SearchEveryServer(browser.Filters.Text);
             }
             else
             {
@@ -511,13 +665,14 @@ namespace Dispatch
                 sortKey = key;
                 sortDescending = false;
             }
-            else if (!sortDescending)
+            else if (!sortDescending && key != SortKey.Ping)
             {
                 sortDescending = true;
             }
             else
             {
-                sortKey = SortKey.Nearest;
+                // Third click (or a second on ping) returns to the default: lowest ping first.
+                sortKey = SortKey.Ping;
                 sortDescending = false;
             }
 
@@ -527,12 +682,12 @@ namespace Dispatch
 
         private void UpdateHeaders()
         {
+            HeadPing.Content = HeaderText(SortKey.Ping, "PING");
             HeadMode.Content = HeaderText(SortKey.Mode, "GAME MODE");
             HeadMap.Content = HeaderText(SortKey.Map, "MAP");
             HeadRegion.Content = HeaderText(SortKey.Region, "REGION");
             HeadBots.Content = HeaderText(SortKey.Bots, "BOT");
             HeadSlots.Content = HeaderText(SortKey.Slots, "SLOTS");
-            HeadName.ToolTip = sortKey == SortKey.Nearest ? "Sorted nearest first, as Steam returns them" : null;
         }
 
         private string HeaderText(SortKey key, string label) =>
@@ -823,12 +978,20 @@ namespace Dispatch
                 f.Regions.Add(r);
             }
 
-            if (Enum.TryParse(settings.Get("sort"), out SortKey key))
+            f.MaxPing = PingLimits.Contains((int)settings.GetDouble("maxPing", 0)) ? (int)settings.GetDouble("maxPing", 0) : 0;
+
+            if (Enum.TryParse(settings.Get("sort"), out SortKey key) && key != SortKey.Nearest)
             {
                 sortKey = key;
+                sortDescending = settings.Get("descending") == "1";
             }
 
-            sortDescending = settings.Get("descending") == "1";
+            client.Location = settings.Get("pingLocation");
+            if (long.TryParse(settings.Get("pingLocationTime"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks) && ticks > 0)
+            {
+                client.LocationUtc = new DateTime(ticks, DateTimeKind.Utc);
+            }
+
             SetFiltersOpen(settings.Get("filters", "1") == "1");
 
             var width = settings.GetDouble("width", Width);
@@ -860,9 +1023,16 @@ namespace Dispatch
             settings.SetList("maps", f.Maps);
             settings.SetList("bots", f.Bots);
             settings.SetList("regions", f.Regions);
+            settings.SetDouble("maxPing", f.MaxPing);
             settings.Set("sort", sortKey.ToString());
             settings.Set("descending", sortDescending ? "1" : "0");
             settings.Set("filters", FilterPanel.Visibility == Visibility.Visible ? "1" : "0");
+            if (!string.IsNullOrEmpty(client.Location))
+            {
+                settings.Set("pingLocation", client.Location);
+                settings.Set("pingLocationTime", client.LocationUtc.Ticks.ToString(CultureInfo.InvariantCulture));
+            }
+
             var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
             settings.SetDouble("left", bounds.Left);
             settings.SetDouble("top", bounds.Top);

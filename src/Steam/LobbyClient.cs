@@ -20,21 +20,34 @@ namespace Dispatch.Steam
     {
         public const string WorkerFlag = "--lookup";
 
+        /// <summary>How long a measured relay location is reused before measuring again.</summary>
+        public static readonly TimeSpan LocationMaxAge = TimeSpan.FromHours(2);
+
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
         private string steamApi;
 
+        /// <summary>The player's position on Steam's relay network, as Steam's own text form. Local only.</summary>
+        public string Location { get; set; }
+
+        public DateTime LocationUtc { get; set; }
+
+        private bool LocationFresh => !string.IsNullOrEmpty(Location) && DateTime.UtcNow - LocationUtc < LocationMaxAge;
+
         /// <param name="onAnswer">Called on a worker thread with each request's index and servers.</param>
-        public Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer, CancellationToken token) =>
-            Task.Run(() => Run(queries, onAnswer, token), token);
+        /// <param name="onPings">Called on a worker thread with pings measured after the servers were listed.</param>
+        public Task RunAsync(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
+            Action<Dictionary<string, int>> onPings, CancellationToken token) =>
+            Task.Run(() => Run(queries, onAnswer, onPings, token), token);
 
         public async Task<List<Server>> FetchAsync(LobbyQuery query, CancellationToken token)
         {
             var result = new List<Server>();
-            await RunAsync(new[] { query }, (_, servers) => result = servers, token).ConfigureAwait(false);
+            await RunAsync(new[] { query }, (_, servers) => result = servers, null, token).ConfigureAwait(false);
             return result;
         }
 
-        private void Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer, CancellationToken token)
+        private void Run(IReadOnlyList<LobbyQuery> queries, Action<int, List<Server>> onAnswer,
+            Action<Dictionary<string, int>> onPings, CancellationToken token)
         {
             if (steamApi == null)
             {
@@ -70,6 +83,11 @@ namespace Dispatch.Steam
                 using (var timer = new Timer(_ => Kill(process), null, Timeout, System.Threading.Timeout.InfiniteTimeSpan))
                 {
                     var stdin = new System.IO.StreamWriter(process.StandardInput.BaseStream, new UTF8Encoding(false)) { NewLine = "\n" };
+                    if (LocationFresh)
+                    {
+                        stdin.WriteLine(Protocol.EncodeLocationHeader(Location));
+                    }
+
                     foreach (var q in queries)
                     {
                         stdin.WriteLine(Protocol.EncodeQuery(q));
@@ -79,6 +97,7 @@ namespace Dispatch.Steam
                     process.StandardError.ReadToEndAsync();
 
                     var pending = new List<Server>();
+                    var pings = new Dictionary<string, int>();
                     string error = null;
                     var answered = 0;
                     string line;
@@ -106,7 +125,27 @@ namespace Dispatch.Steam
                             case Protocol.ErrorRecord:
                                 error = f.Length > 2 ? f[2] : "Steam lookup failed.";
                                 break;
+                            case Protocol.LocationRecord:
+                                if (f.Length > 1 && f[1].Length > 0)
+                                {
+                                    Location = f[1];
+                                    LocationUtc = DateTime.UtcNow;
+                                }
+
+                                break;
+                            case Protocol.PingRecord:
+                                if (Protocol.TryDecodePing(f, out var lobby, out var ms))
+                                {
+                                    pings[lobby] = ms;
+                                }
+
+                                break;
                         }
+                    }
+
+                    if (pings.Count > 0)
+                    {
+                        onPings?.Invoke(pings);
                     }
 
                     process.WaitForExit();
