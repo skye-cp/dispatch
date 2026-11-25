@@ -18,6 +18,12 @@ namespace Dispatch
 
         /// <summary>Pull to refresh was triggered.</summary>
         Pull,
+
+        /// <summary>Something didn't work: a soft, low "denied" tone.</summary>
+        Error,
+
+        /// <summary>A host was followed.</summary>
+        Follow,
     }
 
     /// <summary>
@@ -31,6 +37,8 @@ namespace Dispatch
         private readonly SoundPlayer join;
         private readonly SoundPlayer copy;
         private readonly SoundPlayer pull;
+        private readonly SoundPlayer error;
+        private readonly SoundPlayer follow;
 
         public Sounds()
         {
@@ -38,6 +46,8 @@ namespace Dispatch
             join = Make(Concat(Tone(740, 0.06, 0.28), Silence(0.015), Tone(1110, 0.09, 0.28)));
             copy = Make(Tick(1900, 0.03, 0.22));
             pull = Make(Concat(Tick(1300, 0.018, 0.18), Tick(950, 0.022, 0.16)));
+            error = Make(Concat(Tone(520, 0.07, 0.2, harmonic: 0.25), Silence(0.02), Tone(390, 0.12, 0.2, harmonic: 0.25)));
+            follow = Make(Concat(Tick(1250, 0.02, 0.17), Silence(0.01), Tick(1700, 0.03, 0.17)));
         }
 
         public bool Enabled { get; set; } = true;
@@ -64,6 +74,12 @@ namespace Dispatch
                         break;
                     case Cue.Pull:
                         pull.Play();
+                        break;
+                    case Cue.Error:
+                        error.Play();
+                        break;
+                    case Cue.Follow:
+                        follow.Play();
                         break;
                 }
             }

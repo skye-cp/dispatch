@@ -100,8 +100,13 @@
         </Setter>
     </Style>
 
-    <!-- Buttons. -->
+    <!-- Buttons. Hover eases in through an overlay whose colours each style sets in its resources
+         (HoverFill, HoverLine); pressing scales the button down slightly. -->
     <Style x:Key="ButtonBase" TargetType="Button">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverFill" Color="Transparent" />
+            <SolidColorBrush x:Key="HoverLine" Color="Transparent" />
+        </Style.Resources>
         <Setter Property="FontFamily" Value="{StaticResource HeadFont}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Padding" Value="16,6,16,7" />
@@ -110,13 +115,53 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="1" CornerRadius="2" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False" />
-                    </Border>
+                    <Grid x:Name="root" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform />
+                        </Grid.RenderTransform>
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="2" />
+                        <Border x:Name="hover" Background="{DynamicResource HoverFill}" BorderBrush="{DynamicResource HoverLine}"
+                                BorderThickness="1" CornerRadius="2" Opacity="0" />
+                        <Border x:Name="focus" BorderBrush="{StaticResource TextBrush}" BorderThickness="1" CornerRadius="2" Visibility="Collapsed" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False" />
+                    </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="hover" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="hover" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="RenderTransform.ScaleX" To="0.96" Duration="0:0:0.06" />
+                                        <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="RenderTransform.ScaleY" To="0.96" Duration="0:0:0.06" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.14" />
+                                        <DoubleAnimation Storyboard.TargetName="root" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+                            <Setter TargetName="focus" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4" />
@@ -128,26 +173,22 @@
     </Style>
 
     <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverFill" Color="{StaticResource RedHotColor}" />
+            <SolidColorBrush x:Key="HoverLine" Color="{StaticResource RedHotColor}" />
+        </Style.Resources>
         <Setter Property="Background" Value="{StaticResource RedBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource RedBrush}" />
         <Setter Property="Foreground" Value="{StaticResource OnRedBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource RedHotBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource RedHotBrush}" />
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
     <Style x:Key="Ghost" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverLine" Color="{StaticResource TextColor}" />
+        </Style.Resources>
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="BorderBrush" Value="{StaticResource TextBrush}" />
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
     <Style x:Key="Link" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
@@ -165,6 +206,9 @@
 
     <!-- Square icon button, outlined like the game's refresh button. -->
     <Style x:Key="Square" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverLine" Color="{StaticResource TextColor}" />
+        </Style.Resources>
         <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Width" Value="32" />
@@ -173,15 +217,13 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="BorderBrush" Value="{StaticResource TextBrush}" />
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
     <!-- Title-bar buttons. -->
     <Style x:Key="Caption" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverFill" Color="{StaticResource RowSelectedColor}" />
+        </Style.Resources>
         <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
         <Setter Property="FontSize" Value="10" />
         <Setter Property="Width" Value="46" />
@@ -194,21 +236,21 @@
         <Setter Property="IsTabStop" Value="False" />
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource RowSelectedBrush}" />
                 <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
             </Trigger>
         </Style.Triggers>
     </Style>
 
     <Style x:Key="CaptionClose" TargetType="Button" BasedOn="{StaticResource Caption}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="HoverFill" Color="{StaticResource RedColor}" />
+        </Style.Resources>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource RedBrush}" />
                 <Setter Property="Foreground" Value="{StaticResource OnRedBrush}" />
             </Trigger>
         </Style.Triggers>
     </Style>
-
     <!-- Column header button inside the red bar. -->
     <Style x:Key="HeaderCell" TargetType="Button">
         <Setter Property="Foreground" Value="{StaticResource OnRedBrush}" />
@@ -279,17 +321,46 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="b" Background="{StaticResource RowBrush}" BorderBrush="{StaticResource LineBrush}"
-                            BorderThickness="1" CornerRadius="2" Height="38">
+                    <!-- Hover and selection fade in as layers over the row. -->
+                    <Grid Height="38">
+                        <Border Background="{StaticResource RowBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="2" />
+                        <Border x:Name="hover" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" CornerRadius="2" Opacity="0" />
+                        <Border x:Name="selected" Background="{StaticResource RowSelectedBrush}" BorderBrush="{StaticResource TextBrush}"
+                                BorderThickness="1" CornerRadius="2" Opacity="0" />
                         <ContentPresenter VerticalAlignment="Center" />
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="hover" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="hover" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.25" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="b" Property="Background" Value="{StaticResource RowSelectedBrush}" />
-                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="selected" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="selected" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -411,6 +482,9 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource TextDimBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource RowSelectedBrush}" />
                         </Trigger>
                         <Trigger Property="Tag" Value="on">
                             <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource RedBrush}" />
