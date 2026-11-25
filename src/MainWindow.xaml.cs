@@ -693,6 +693,7 @@ namespace Dispatch
         }
 
         private readonly Dictionary<UIElement, DateTime> menuClosedUtc = new Dictionary<UIElement, DateTime>();
+        private readonly Dictionary<UIElement, ContextMenu> openMenus = new Dictionary<UIElement, ContextMenu>();
 
         /// <summary>A toolbar menu that opens below its button, right edges aligned, so it stays inside the window.</summary>
         private ContextMenu NewMenu(UIElement anchor)
@@ -707,15 +708,24 @@ namespace Dispatch
                 },
             };
             menu.Closed += (s, e) => menuClosedUtc[anchor] = DateTime.UtcNow;
+            openMenus[anchor] = menu;
             return menu;
         }
 
         /// <summary>
-        /// True when this button's menu closed a moment ago. Clicking an open menu's button first closes the menu
-        /// (the click lands outside it), so that click should leave it closed rather than open it again.
+        /// Clicking a button whose menu is open closes the menu instead of opening a new one. Depending on timing, the
+        /// click arrives while the menu is still open, or just after the outside click has closed it; both count.
         /// </summary>
-        private bool MenuJustClosed(UIElement anchor) =>
-            menuClosedUtc.TryGetValue(anchor, out var at) && DateTime.UtcNow - at < TimeSpan.FromMilliseconds(300);
+        private bool MenuJustClosed(UIElement anchor)
+        {
+            if (openMenus.TryGetValue(anchor, out var open) && open.IsOpen)
+            {
+                open.IsOpen = false;
+                return true;
+            }
+
+            return menuClosedUtc.TryGetValue(anchor, out var at) && DateTime.UtcNow - at < TimeSpan.FromMilliseconds(300);
+        }
 
         private MenuItem MenuTitle(string text, string note = null) => new MenuItem
         {
