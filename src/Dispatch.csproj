@@ -9,7 +9,11 @@
     <AssemblyName>Dispatch</AssemblyName>
     <RootNamespace>Dispatch</RootNamespace>
     <ApplicationIcon>Assets\dispatch.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
+    <Authors>Skye</Authors>
+    <Company>Skye</Company>
+    <Copyright>Copyright (c) 2026 Skye</Copyright>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Dispatch</Product>
     <Description>Find a Bodycam server, join it, or send a friend the link.</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

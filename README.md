@@ -6,7 +6,7 @@ Bodycam's party system is offline, so friends can't queue together, and the in-g
 
 ## Use
 
-Requires Windows 10 or 11, Steam running, and Bodycam installed. Nothing to install: run `Dispatch.exe`.
+Requires Windows 10 or 11, Steam running, and Bodycam installed. Nothing to install: download `Dispatch.exe` from [Releases](../../releases) and run it.
 
 1. Start Bodycam and wait at the main menu.
 2. Pick a server and press **Join**. The game connects to it. Servers are listed lowest ping first.
@@ -62,6 +62,18 @@ tests/    unit tests (xUnit)
 ```
 
 Quality gates run through [pre-commit](https://pre-commit.com): `pre-commit install` once per clone. They check file hygiene, secrets (gitleaks, detect-secrets), personal data, C# formatting and Conventional Commits, and run the tests before each push. `main` takes merges only. The personal-data check also reads an optional local denylist; see `.config/pii_wordlist.example.txt`.
+
+## Releases
+
+Pushing a version tag (`v1.2.3`, matching `<Version>` in `src/Dispatch.csproj`) runs the release workflow on GitHub-hosted runners: it tests, builds, signs (see below) and publishes `Dispatch.exe` with its SHA-256 checksum.
+
+## Code signing policy
+
+Signed releases: Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application is pending; until it is approved, releases are unsigned and say so in their notes.
+
+- Only release builds from this repository's release workflow are signed, each after manual approval.
+- Committers and reviewers: [skye-cp](https://github.com/skye-cp). Approvers: [skye-cp](https://github.com/skye-cp).
+- Privacy: apart from the Steam requests it exists to make (listing public lobbies and measuring relay ping), Dispatch will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
 ## License
 

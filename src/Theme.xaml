@@ -279,7 +279,7 @@
         </Setter>
     </Style>
 
-    <!-- Slim scroll bar. -->
+    <!-- Slim scroll bar. It always keeps its width, so rows line up with the header; it only hides when nothing scrolls. -->
     <Style TargetType="ScrollBar">
         <Setter Property="Width" Value="10" />
         <Setter Property="MinWidth" Value="10" />
@@ -306,6 +306,11 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="Maximum" Value="0">
+                <Setter Property="Visibility" Value="Hidden" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Right-click menu. -->
