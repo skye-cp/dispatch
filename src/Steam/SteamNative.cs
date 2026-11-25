@@ -11,7 +11,9 @@ namespace Dispatch.Steam
     /// </summary>
     internal static class SteamNative
     {
+        /// <summary>LobbyMatchList_t::k_iCallback, the result type of a lobby list request.</summary>
         public const int LobbyMatchListCallback = 510;
+        /// <summary>k_ELobbyDistanceFilterWorldwide: without it Steam returns only lobbies near the player.</summary>
         public const int DistanceWorldwide = 3;
 
         private const string Lib = "steam_api64";

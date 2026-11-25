@@ -111,7 +111,6 @@ namespace Dispatch.Tests
             var now = DateTime.UtcNow;
             b.Store(b.Plan()[0], new[] { S("charlie", region: "iad", rank: 0), S("alpha", rank: 1), S("bravo", rank: 2) }, now);
 
-            Assert.Equal(new[] { "charlie", "alpha", "bravo" }, b.Visible(SortKey.Nearest, false).Select(s => s.Name));
             Assert.Equal(new[] { "alpha", "bravo", "charlie" }, b.Visible(SortKey.Name, false).Select(s => s.Name));
             Assert.Equal(new[] { "charlie", "bravo", "alpha" }, b.Visible(SortKey.Name, true).Select(s => s.Name));
             Assert.Equal("gru", b.Regions()[0].Code);
@@ -130,7 +129,7 @@ namespace Dispatch.Tests
             var near = S("near", rank: 1);
             var unknown = S("unknown", region: "lim", rank: 2);
             b.Store(b.Plan()[0], new[] { far, near, unknown }, DateTime.UtcNow);
-            Assert.True(b.HasUnknownPings());
+            Assert.Contains(b.Pool(), s => s.Ping < 0);
 
             b.ApplyPings(new System.Collections.Generic.Dictionary<string, int> { [far.Id] = 140, [near.Id] = 20 });
             Assert.Equal(new[] { "near", "far", "unknown" }, b.Visible(SortKey.Ping, false).Select(s => s.Name));

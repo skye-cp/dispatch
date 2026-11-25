@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using Dispatch.Steam;
 
@@ -18,7 +19,16 @@ namespace Dispatch
             // The same executable doubles as the short-lived Steam lookup process.
             if (args.Length == 2 && args[0] == LobbyClient.WorkerFlag)
             {
-                return LookupWorker.Run(args[1]);
+                try
+                {
+                    return LookupWorker.Run(args[1]);
+                }
+                catch (Exception e)
+                {
+                    Console.Out.WriteLine(Protocol.EncodeError("crash", "The Steam lookup failed: " + e.Message));
+                    Console.Out.Flush();
+                    return 5;
+                }
             }
 
             var demo = args.Contains("--demo");
@@ -37,6 +47,19 @@ namespace Dispatch
                 }
 
                 var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+                app.DispatcherUnhandledException += (s, e) =>
+                {
+                    // A bug should cost one action, not the whole window: log it, tell the user, carry on.
+                    Log(e.Exception);
+                    (app.MainWindow as MainWindow)?.ShowUnexpected(e.Exception);
+                    e.Handled = true;
+                };
+                AppDomain.CurrentDomain.UnhandledException += (s, e) => Log(e.ExceptionObject as Exception);
+                TaskScheduler.UnobservedTaskException += (s, e) =>
+                {
+                    Log(e.Exception);
+                    e.SetObserved();
+                };
                 app.Resources.MergedDictionaries.Add(new ResourceDictionary
                 {
                     Source = new Uri("pack://application:,,,/Dispatch;component/Theme.xaml"),
@@ -45,13 +68,54 @@ namespace Dispatch
             }
         }
 
+        /// <summary>Appends an unexpected error to %LOCALAPPDATA%\Dispatch\error.log, kept small, for bug reports.</summary>
+        internal static void Log(Exception e)
+        {
+            if (e == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var path = System.IO.Path.Combine(GameLocator.CacheFolder, "error.log");
+                System.IO.Directory.CreateDirectory(GameLocator.CacheFolder);
+                if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 256 * 1024)
+                {
+                    System.IO.File.Delete(path);
+                }
+
+                System.IO.File.AppendAllText(path, DateTime.UtcNow.ToString("u", System.Globalization.CultureInfo.InvariantCulture) + "  " + e + "\n\n");
+            }
+            catch (Exception)
+            {
+                // Logging must never cause a second failure.
+            }
+        }
+
         /// <summary>A second launch brings the open window forward instead of starting another copy.</summary>
         private static void ShowRunningInstance()
         {
             using (var self = Process.GetCurrentProcess())
             {
-                var other = Process.GetProcessesByName(self.ProcessName)
-                    .FirstOrDefault(p => p.Id != self.Id && p.MainWindowHandle != IntPtr.Zero);
+                var all = Process.GetProcessesByName(self.ProcessName);
+                try
+                {
+                    ShowOther(all.FirstOrDefault(p => p.Id != self.Id && p.MainWindowHandle != IntPtr.Zero));
+                }
+                finally
+                {
+                    foreach (var p in all)
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+        }
+
+        private static void ShowOther(Process other)
+        {
+            {
                 if (other == null)
                 {
                     return;
@@ -63,7 +127,6 @@ namespace Dispatch
                 }
 
                 SetForegroundWindow(other.MainWindowHandle);
-                other.Dispose();
             }
         }
 

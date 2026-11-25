@@ -21,16 +21,23 @@ namespace Dispatch.Model
     }
 
     /// <summary>
-    /// Asks GitHub for the latest release. It only works while the repository is public and fails
-    /// silently otherwise (private repository, offline, rate-limited), so it never bothers the user.
+    /// Asks GitHub for the latest release. Fails silently (offline, rate-limited, no release yet), so it
+    /// never bothers the user.
     /// </summary>
     internal static class UpdateCheck
     {
         public const string Repository = "skye-cp/dispatch";
+        public const string RepositoryUrl = "https://github.com/" + Repository;
         public static readonly TimeSpan Interval = TimeSpan.FromHours(12);
 
         private static readonly Regex Tag = new Regex("\"tag_name\"\\s*:\\s*\"(?<v>[^\"]+)\"", RegexOptions.CultureInvariant);
-        private static readonly Regex Url = new Regex("\"html_url\"\\s*:\\s*\"(?<u>https://github\\.com/[^\"]+/releases/tag/[^\"]+)\"", RegexOptions.CultureInvariant);
+        private static readonly Regex Url = new Regex("\"html_url\"\\s*:\\s*\"(?<u>[^\"]+)\"", RegexOptions.CultureInvariant);
+
+        /// <summary>Only a release page of this repository is ever offered or opened.</summary>
+        private static readonly Regex ReleasePage = new Regex(
+            @"\Ahttps://github\.com/" + Regex.Escape(Repository) + @"/releases/tag/[A-Za-z0-9._-]+\z", RegexOptions.CultureInvariant);
+
+        public static bool IsReleasePage(string url) => url != null && ReleasePage.IsMatch(url);
 
         public static Task<ReleaseInfo> LatestAsync() => Task.Run(() =>
         {
@@ -62,7 +69,7 @@ namespace Dispatch.Model
         {
             var tag = Tag.Match(json ?? "");
             var url = Url.Match(json ?? "");
-            return tag.Success && url.Success && TryVersion(tag.Groups["v"].Value, out var version)
+            return tag.Success && url.Success && IsReleasePage(url.Groups["u"].Value) && TryVersion(tag.Groups["v"].Value, out var version)
                 ? new ReleaseInfo(version, tag.Groups["v"].Value, url.Groups["u"].Value)
                 : null;
         }
@@ -70,7 +77,10 @@ namespace Dispatch.Model
         public static bool TryVersion(string tag, out Version version) =>
             Version.TryParse((tag ?? "").TrimStart('v', 'V'), out version);
 
+        /// <summary>Compares major.minor.build only, so "v0.8.0.0" and 0.8.0 count as the same version.</summary>
         public static bool IsNewer(ReleaseInfo latest, Version current) =>
-            latest != null && latest.Version > new Version(current.Major, current.Minor, Math.Max(0, current.Build));
+            latest != null && Normal(latest.Version) > Normal(current);
+
+        private static Version Normal(Version v) => new Version(v.Major, v.Minor, Math.Max(0, v.Build));
     }
 }

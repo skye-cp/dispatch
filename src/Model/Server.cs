@@ -138,6 +138,11 @@ namespace Dispatch.Model
         public string BotsText => Bots == "true" ? "On" : Bots == "false" ? "Off" : "—";
         public string SlotsText => Limit > 0 ? Limit.ToString(CultureInfo.InvariantCulture) : "—";
         public string Link => JoinLink.Format(Id, Owner);
+
+        /// <summary>A Steam 64-bit ID or lobby ID: digits only, within ulong.</summary>
+        public static bool IsSteamId(string value) =>
+            !string.IsNullOrEmpty(value) && value.Length <= 20 &&
+            ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0;
         public string PingText => Ping >= 0 ? Ping.ToString(CultureInfo.InvariantCulture) : "—";
 
         /// <summary>Good, Fair, Poor or Unknown; drives the ping colour.</summary>

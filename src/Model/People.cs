@@ -114,7 +114,7 @@ namespace Dispatch.Model
                     Name = r[2],
                     Mode = r[3],
                     Map = r[4],
-                    JoinedUtc = new DateTime(Math.Max(0, ticks), DateTimeKind.Utc),
+                    JoinedUtc = new DateTime(Math.Min(Math.Max(0, ticks), DateTime.MaxValue.Ticks), DateTimeKind.Utc),
                 });
             }
         }

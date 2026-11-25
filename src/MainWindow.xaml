@@ -32,12 +32,12 @@
                     <TextBlock x:Name="VersionText" Margin="7,3,0,0" FontSize="11" Foreground="{StaticResource TextFaintBrush}" VerticalAlignment="Center" />
                     <Button x:Name="UpdateLink" Style="{StaticResource Link}" FontSize="12" Margin="6,2,0,0" Visibility="Collapsed"
                             Foreground="{StaticResource RedHotBrush}" WindowChrome.IsHitTestVisibleInChrome="True" Click="OnUpdate" />
-                    <TextBlock x:Name="Tagline" Margin="16,2,0,0" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                    <TextBlock Margin="16,2,0,0" FontFamily="{StaticResource MonoFont}" FontSize="12"
                                Foreground="{StaticResource RedBrush}" VerticalAlignment="Center"
                                Text="Find a Bodycam server. Join it, or send a friend the link." />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                    <Button x:Name="MinButton" Style="{StaticResource Caption}" AutomationProperties.Name="Minimize" Content="&#xE921;" ToolTip="Minimize"
+                    <Button Style="{StaticResource Caption}" AutomationProperties.Name="Minimize" Content="&#xE921;" ToolTip="Minimize"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnMinimize" />
                     <Button x:Name="MaxButton" Style="{StaticResource Caption}" AutomationProperties.Name="Maximize" Content="&#xE922;" ToolTip="Maximize"
                             WindowChrome.IsHitTestVisibleInChrome="True" Click="OnMaximize" />
@@ -46,8 +46,9 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Browser-style toolbar: refresh, a full-width search and AUTO on one row; the filter buttons
-                 (each opening a small dropdown of chips) and RESET on the row beneath. -->
+            <!-- Browser-style toolbar: refresh and AUTO joined on the left, a full-width search that also takes invite
+                 links, then Recent, Followed hosts and the menu. Filter buttons (each opening a dropdown of chips) and
+                 RESET sit on the row beneath. -->
             <Grid Grid.Row="1" Margin="18,6,18,2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -61,7 +62,7 @@
                     </Grid.ColumnDefinitions>
                     <!-- Refresh and AUTO, joined as one control: refresh now, or every minute. While AUTO is on,
                          a ring around the refresh icon fills until the next refresh. -->
-                    <Border x:Name="RefreshGroup" BorderThickness="1" CornerRadius="2" Height="30" Margin="0,0,8,0">
+                    <Border BorderThickness="1" CornerRadius="2" Height="30" Margin="0,0,8,0">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="BorderBrush" Value="{StaticResource LineStrongBrush}" />
@@ -125,7 +126,7 @@
                     <!-- Browser-style menus: history, bookmarks (followed hosts) and the main menu. -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
                         <Button x:Name="RecentButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE81C;" AutomationProperties.Name="Recent servers"
-                                ToolTip="Recent servers (Ctrl+H)" Click="OnRecent" ContextMenuService.IsEnabled="False" />
+                                ToolTip="Recent servers (Ctrl+H)" Click="OnRecent" />
                         <Button x:Name="FollowingButton" Style="{StaticResource Square}" Margin="0,0,6,0" Content="&#xE734;" AutomationProperties.Name="Followed hosts"
                                 ToolTip="Hosts you follow" Click="OnFollowing" />
                         <Button x:Name="MenuButton" Style="{StaticResource Square}" Content="&#xE712;" AutomationProperties.Name="Menu"
@@ -241,7 +242,7 @@
                             <Border Style="{StaticResource Flyout}">
                                 <StackPanel>
                                     <WrapPanel x:Name="BotChips" MaxWidth="470" />
-                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="bot" HorizontalAlignment="Right"
+                                    <Button Style="{StaticResource Link}" Content="CLEAR" Tag="bots" HorizontalAlignment="Right"
                                             Margin="0,2,0,0" Click="OnClearCategory" ToolTip="Clear this filter" />
                                 </StackPanel>
                             </Border>
@@ -260,7 +261,7 @@
             <Grid Grid.Row="3" Margin="18,0,18,6">
                 <Border Background="{StaticResource RedBrush}" CornerRadius="2" Height="34">
                     <!-- 1 px each side matches the row border; the list's scroll bar sits in the gutter to the right. -->
-                    <Grid x:Name="HeaderGrid" Margin="1,0,1,0">
+                    <Grid Margin="1,0,1,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
                             <ColumnDefinition Width="70" />
@@ -341,7 +342,7 @@
                                                MouseLeftButtonUp="OnStarClick" ToolTip="Follow this host: pin their server and alert me when it appears">
                                         <TextBlock.RenderTransform><ScaleTransform /></TextBlock.RenderTransform>
                                     </TextBlock>
-                                    <TextBlock x:Name="NameText" Grid.Column="1" Text="{Binding Name}" FontFamily="{StaticResource HeadFont}" FontSize="15"
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontFamily="{StaticResource HeadFont}" FontSize="15"
                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding Name}" />
                                     <Border x:Name="FriendBadge" RenderTransformOrigin="0,0.5" Grid.Column="2" Margin="10,1,0,0" Padding="5,0,5,1" CornerRadius="2"
                                             BorderBrush="{StaticResource RedBrush}" BorderThickness="1" VerticalAlignment="Center"
@@ -525,14 +526,14 @@
                             <TextBlock Text="JOIN PASTED LINK" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="CopyButton" Style="{StaticResource Ghost}" Margin="0,0,8,0" ToolTip="Copy an invite link for a friend (Ctrl+C)"
+                    <Button x:Name="CopyButton" Style="{StaticResource Ghost}" AutomationProperties.Name="Copy invite link" Margin="0,0,8,0" ToolTip="Copy an invite link for a friend (Ctrl+C)"
                             Click="OnCopyLink">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="CopyIcon" FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE71B;" VerticalAlignment="Center" Margin="0,1,8,0" />
                             <TextBlock x:Name="CopyText" Text="COPY INVITE LINK" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="JoinButton" Style="{StaticResource Primary}" MinWidth="110" ToolTip="Join this server (Enter or double-click)"
+                    <Button x:Name="JoinButton" Style="{StaticResource Primary}" AutomationProperties.Name="Join" MinWidth="110" ToolTip="Join this server (Enter or double-click)"
                             Click="OnJoin" Content="JOIN" />
                 </StackPanel>
             </Grid>

@@ -7,7 +7,7 @@ using System.Text;
 
 namespace Dispatch.Model
 {
-    /// <summary>Remembered filters and window placement, kept in the user's own app-data folder.</summary>
+    /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>
     internal sealed class Settings
     {
         private static readonly string FilePath = Path.Combine(
@@ -27,20 +27,43 @@ namespace Dispatch.Model
             }
             catch (IOException)
             {
+                s.ReadOnly = true;
             }
             catch (UnauthorizedAccessException)
             {
+                s.ReadOnly = true;
             }
 
             return s;
         }
 
+        /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>
+        /// Set when the file exists but could not be read (locked by a sync tool or antivirus, say): saving
+        /// then would replace the user's follows and recent servers with defaults, so this session doesn't.
+        /// </summary>
+        public bool ReadOnly { get; private set; }
+
         public void Save()
         {
+            if (ReadOnly)
+            {
+                return;
+            }
+
             try
             {
+                // Written to a temporary file first, so a crash mid-write never leaves a truncated settings file.
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                File.WriteAllText(FilePath, Serialize(), new UTF8Encoding(false));
+                var temp = FilePath + ".tmp";
+                File.WriteAllText(temp, Serialize(), new UTF8Encoding(false));
+                if (File.Exists(FilePath))
+                {
+                    File.Replace(temp, FilePath, null);
+                }
+                else
+                {
+                    File.Move(temp, FilePath);
+                }
             }
             catch (IOException)
             {
@@ -75,7 +98,7 @@ namespace Dispatch.Model
         public void SetList(string key, IEnumerable<string> items) =>
             Set(key, string.Join(",", items.Where(i => i.IndexOf(',') < 0)));
 
-        /// <summary>Lists of records whose fields may hold any text (host names), escaped so separators can't clash.</summary>
+        /// <summary>Everything Dispatch remembers (filters, preferences, follows, recent servers, age anchors, window placement), as key=value lines in the user's app-data folder.</summary>Lists of records whose fields may hold any text (host names), escaped so separators can't clash.</summary>
         public IEnumerable<string[]> GetRecords(string key) =>
             GetList(key).Select(r => r.Split('|').Select(Uri.UnescapeDataString).ToArray());
 

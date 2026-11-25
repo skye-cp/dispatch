@@ -17,6 +17,7 @@ namespace Dispatch.Steam
         private const string LibraryName = "steam_api64.dll";
 
         private static readonly Regex PathEntry = new Regex("\"path\"\\s+\"(?<p>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.CultureInvariant);
+        private static readonly Regex OldLibraryEntry = new Regex("\"\\d+\"\\s+\"(?<p>[A-Za-z]:(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.CultureInvariant);
         private static readonly Regex InstallDirEntry = new Regex("\"installdir\"\\s+\"(?<p>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.CultureInvariant);
 
         public static string CacheFolder => Path.Combine(
@@ -25,18 +26,35 @@ namespace Dispatch.Steam
         /// <summary>Returns the path of a private copy of the game's Steam library.</summary>
         public static string PrepareSteamApi()
         {
-            var source = FindSteamApi();
-            Directory.CreateDirectory(CacheFolder);
-            var target = Path.Combine(CacheFolder, LibraryName);
-            var src = new FileInfo(source);
-            var dst = new FileInfo(target);
-            if (!dst.Exists || dst.Length != src.Length || dst.LastWriteTimeUtc != src.LastWriteTimeUtc)
+            try
             {
-                File.Copy(source, target, true);
-                File.SetLastWriteTimeUtc(target, src.LastWriteTimeUtc);
-            }
+                var source = FindSteamApi();
+                Directory.CreateDirectory(CacheFolder);
+                var target = Path.Combine(CacheFolder, LibraryName);
+                var src = new FileInfo(source);
+                var dst = new FileInfo(target);
+                if (!dst.Exists || dst.Length != src.Length || dst.LastWriteTimeUtc != src.LastWriteTimeUtc)
+                {
+                    // Copied beside the target and then swapped in, so a reader never sees a half-written library.
+                    var temp = target + ".tmp";
+                    File.Copy(source, temp, true);
+                    File.SetLastWriteTimeUtc(temp, src.LastWriteTimeUtc);
+                    if (dst.Exists)
+                    {
+                        File.Replace(temp, target, null);
+                    }
+                    else
+                    {
+                        File.Move(temp, target);
+                    }
+                }
 
-            return target;
+                return target;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.Security.SecurityException)
+            {
+                throw new LocatorException("Could not prepare Steam's library from the game folder: " + e.Message);
+            }
         }
 
         public static string FindSteamApi()
@@ -100,8 +118,13 @@ namespace Dispatch.Steam
             return folders.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        public static IEnumerable<string> ParseLibraryFolders(string vdf) =>
-            PathEntry.Matches(vdf).Cast<Match>().Select(m => Unescape(m.Groups["p"].Value));
+        public static IEnumerable<string> ParseLibraryFolders(string vdf)
+        {
+            var paths = PathEntry.Matches(vdf).Cast<Match>().Select(m => Unescape(m.Groups["p"].Value)).ToList();
+
+            // Steam's format before 2021 listed libraries as numbered entries instead: "1"  "D:\\SteamLibrary".
+            return paths.Count > 0 ? paths : OldLibraryEntry.Matches(vdf).Cast<Match>().Select(m => Unescape(m.Groups["p"].Value)).ToList();
+        }
 
         public static string ParseInstallDir(string acf)
         {
