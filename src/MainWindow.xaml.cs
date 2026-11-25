@@ -692,16 +692,30 @@ namespace Dispatch
                 : "Refresh from Steam (F5), or scroll on past the top or bottom of the list.";
         }
 
+        private readonly Dictionary<UIElement, DateTime> menuClosedUtc = new Dictionary<UIElement, DateTime>();
+
         /// <summary>A toolbar menu that opens below its button, right edges aligned, so it stays inside the window.</summary>
-        private static ContextMenu NewMenu(UIElement anchor) => new ContextMenu
+        private ContextMenu NewMenu(UIElement anchor)
         {
-            PlacementTarget = anchor,
-            Placement = PlacementMode.Custom,
-            CustomPopupPlacementCallback = (popup, target, offset) => new[]
+            var menu = new ContextMenu
             {
-                new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
-            },
-        };
+                PlacementTarget = anchor,
+                Placement = PlacementMode.Custom,
+                CustomPopupPlacementCallback = (popup, target, offset) => new[]
+                {
+                    new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 4), PopupPrimaryAxis.Horizontal),
+                },
+            };
+            menu.Closed += (s, e) => menuClosedUtc[anchor] = DateTime.UtcNow;
+            return menu;
+        }
+
+        /// <summary>
+        /// True when this button's menu closed a moment ago. Clicking an open menu's button first closes the menu
+        /// (the click lands outside it), so that click should leave it closed rather than open it again.
+        /// </summary>
+        private bool MenuJustClosed(UIElement anchor) =>
+            menuClosedUtc.TryGetValue(anchor, out var at) && DateTime.UtcNow - at < TimeSpan.FromMilliseconds(300);
 
         private MenuItem MenuTitle(string text, string note = null) => new MenuItem
         {
@@ -797,7 +811,13 @@ namespace Dispatch
                 : fallback;
         }
 
-        private void OnRecent(object sender, RoutedEventArgs e) => ShowRecent();
+        private void OnRecent(object sender, RoutedEventArgs e)
+        {
+            if (!MenuJustClosed(RecentButton))
+            {
+                ShowRecent();
+            }
+        }
 
         /// <summary>Recent servers, like a browser's history: who is hosting now is checked as the menu opens.</summary>
         private async void ShowRecent()
@@ -842,7 +862,13 @@ namespace Dispatch
             }
         }
 
-        private void OnFollowing(object sender, RoutedEventArgs e) => ShowFollowing();
+        private void OnFollowing(object sender, RoutedEventArgs e)
+        {
+            if (!MenuJustClosed(FollowingButton))
+            {
+                ShowFollowing();
+            }
+        }
 
         /// <summary>Followed hosts, like a browser's bookmarks: whether each is hosting now, and one click to their server.</summary>
         private async void ShowFollowing()
@@ -921,14 +947,19 @@ namespace Dispatch
 
         private void OnMenu(object sender, RoutedEventArgs e)
         {
+            if (MenuJustClosed(MenuButton))
+            {
+                return;
+            }
+
             var menu = NewMenu(MenuButton);
-            var sound = new MenuItem { Header = "Sounds", IsCheckable = true, IsChecked = sounds.Enabled };
+            var sound = new MenuItem { Header = "Interface sounds", IsCheckable = true, IsChecked = sounds.Enabled };
             sound.Click += (o, a) =>
             {
                 sounds.Enabled = sound.IsChecked;
                 QueueSave();
                 sounds.Play(Cue.Copy);
-                Say(sounds.Enabled ? "Sounds on." : "Sounds muted.");
+                Say(sounds.Enabled ? "Interface sounds on." : "Interface sounds muted. Alerts for followed hosts still flash the taskbar.");
             };
             var copy = new MenuItem { Header = "Copy invite link when joining", IsCheckable = true, IsChecked = copyOnJoin };
             copy.Click += (o, a) =>
